@@ -3,6 +3,7 @@ import type { AppContext } from "@/types";
 import { getDb } from "@/db";
 import { productImages } from "@/db/schema";
 import { eq, and, asc } from "drizzle-orm";
+import { blobPut, blobDel, blobPublicUrl } from "@/lib/blob";
 import { NotFoundError, ValidationError, SystemError } from "@/lib/errors/classes";
 import { ERROR_CODES } from "../../../../cod-shared/errors/codes";
 
@@ -30,11 +31,14 @@ function extFromMime(mime: string): string {
 /**
  * POST /api/images/upload
  * Receives multipart/form-data with a "file" field.
- * Stores in R2, returns { key, url }.
+ * Stores in Vercel Blob, returns { key, url }.
+ *
+ * NOTE: Vercel serverless functions cap request bodies (~4.5 MB), so this
+ * path only fits small files in production despite the 10 MB guard below.
+ * Large uploads must use the browser direct-upload flow
+ * (POST /api/images/blob-callback + @vercel/blob/client).
  */
 export async function uploadImage(c: Context<AppContext>) {
-  const bucket = c.env.IMAGES;
-
   let formData: FormData;
   try {
     formData = await c.req.formData();
@@ -75,17 +79,9 @@ export async function uploadImage(c: Context<AppContext>) {
 
   const arrayBuffer = await file.arrayBuffer();
 
+  let stored: { url: string; pathname: string };
   try {
-    await bucket.put(key, arrayBuffer, {
-      httpMetadata: { 
-        contentType: file.type,
-        cacheControl: "public, max-age=31536000, immutable"
-      },
-      customMetadata: {
-        originalName: file.name,
-        uploadedAt: new Date().toISOString(),
-      },
-    });
+    stored = await blobPut(key, arrayBuffer, file.type);
   } catch (error) {
     throw new SystemError(
       "Failed to upload image to storage",
@@ -94,19 +90,15 @@ export async function uploadImage(c: Context<AppContext>) {
     );
   }
 
-  const origin = new URL(c.req.url).origin;
-  const url = `${origin}/images/${key}`;
-
-  return c.json({ success: true, data: { key, url } }, 201);
+  return c.json({ success: true, data: { key: stored.pathname, url: stored.url } }, 201);
 }
-
 /**
  * GET /images/:key{.+}
- * Serves an image from R2. No auth — images are public.
- * Uses writeHttpMetadata() per R2 docs for correct Content-Type passthrough.
+ * Permanent redirect to the Vercel Blob CDN URL. No auth — images are public.
+ * Keys are immutable (content never changes under a key), so a 301 is safe
+ * and keeps every previously issued /images/* URL working forever.
  */
 export async function serveImage(c: Context<AppContext>) {
-  const bucket = c.env.IMAGES;
   const key = c.req.param("key");
 
   if (!key) {
@@ -127,23 +119,12 @@ export async function serveImage(c: Context<AppContext>) {
   }
 
   try {
-    const object = await bucket.get(key);
-    if (!object) {
+    const url = await blobPublicUrl(key);
+    if (!url) {
       throw new NotFoundError("Image", key);
     }
 
-    const headers = new Headers();
-    // writeHttpMetadata copies Content-Type, Content-Disposition, etc. from the stored metadata
-    object.writeHttpMetadata(headers);
-    // Use httpEtag (quoted) — required by HTTP spec
-    headers.set("ETag", object.httpEtag);
-    // Set strong cache headers for images
-    headers.set("Cache-Control", "public, max-age=31536000, immutable");
-    // Additional cache headers for better CDN support
-    headers.set("Expires", new Date(Date.now() + 31536000 * 1000).toUTCString());
-    headers.set("Pragma", "public");
-
-    return new Response(object.body, { headers });
+    return c.redirect(url, 301);
   } catch (error) {
     // Re-throw custom errors so middleware can handle them
     if (error instanceof NotFoundError || error instanceof ValidationError) {
@@ -198,6 +179,16 @@ export async function saveProductImage(c: Context<AppContext>) {
       "key and src are required",
       ERROR_CODES.REQUIRED_FIELD_MISSING,
       { missingFields: ["key", "src"].filter(f => !body[f as keyof typeof body]) }
+    );
+  }
+
+  // Keys must live in a server-controlled namespace — rejects foreign or
+  // absolute URLs smuggled in as storage keys.
+  if (!/^(products|landing)\/[A-Za-z0-9._-]+$/.test(body.key)) {
+    throw new ValidationError(
+      "key must be a products/ or landing/ object key",
+      ERROR_CODES.VALIDATION_FAILED,
+      { key: body.key }
     );
   }
 
@@ -321,7 +312,6 @@ export async function deleteProductImage(c: Context<AppContext>) {
   const productId = c.req.param("id")!;
   const imageId = c.req.param("imageId")!;
   const db = getDb(c.env.DB);
-  const bucket = c.env.IMAGES;
 
   const image = await db
     .select()
@@ -333,13 +323,13 @@ export async function deleteProductImage(c: Context<AppContext>) {
     throw new NotFoundError("Image", imageId);
   }
 
-  // Delete from R2 first — a storage failure aborts the whole operation so the
+  // Delete from Blob first — a storage failure aborts the whole operation so the
   // DB record never points at a missing object.
   if (image.r2Key) {
     try {
-      await bucket.delete(image.r2Key);
+      await blobDel(image.r2Key);
     } catch (error) {
-      console.error(`R2 delete failed for key: ${image.r2Key}`, error);
+      console.error(`Blob delete failed for key: ${image.r2Key}`, error);
       throw new SystemError(
         "Failed to delete image from storage",
         ERROR_CODES.INTERNAL_SERVER_ERROR,

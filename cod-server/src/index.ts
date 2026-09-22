@@ -27,7 +27,7 @@ import productGroupsRoutes from "@/endpoints/product-groups/routes";
 import landingPagesRoutes from "@/endpoints/landing-pages/routes";
 import shippingProfilesRoutes from "@/endpoints/shipping-profiles/routes";
 import driverPaymentsRoutes from "@/endpoints/driver-payments/routes";
-import { uploadRouter, serveRouter } from "@/endpoints/images/routes";
+import { uploadRouter, serveRouter, callbackRouter } from "@/endpoints/images/routes";
 import activityLogsRoutes from "@/endpoints/activity-logs/routes";
 import storesRoutes from "@/endpoints/stores/routes";
 import reviewsRoutes from "@/endpoints/reviews/routes";
@@ -109,6 +109,7 @@ app.use("/api/*", authMiddleware);
 
 // Mount endpoint routes
 app.route("/api/images", uploadRouter);
+app.route("/api/images", callbackRouter);
 app.route("/api/activity-logs", activityLogsRoutes);
 app.route("/api/orders", ordersRoutes);
 app.route("/api/users", usersRoutes);
