@@ -5,6 +5,7 @@
   "description": "Shared drizzle schema, queries, RBAC, and errors consumed by cod-server and cod-client-astro. Not published — imported via relative path.",
   "type": "module",
   "dependencies": {
+    "@neondatabase/serverless": "^1.1.0",
     "drizzle-orm": "^0.45.2"
   }
 }
