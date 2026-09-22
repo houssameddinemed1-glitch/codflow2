@@ -1,22 +1,22 @@
-import type { AppDb } from "../db/client";
-import { storeTiktokConfig } from "../db/schema";
+import type { PgDb } from "../db/client.pg";
+import { storeTiktokConfig } from "../db/schema.pg";
 import { eq } from "drizzle-orm";
 
 export type TiktokConversionEvent = "Purchase" | "Purchase_Confirmed" | "Purchase_Delivered" | "Lead";
 
-export async function getTiktokConfig(db: AppDb, storeId?: string) {
+export async function getTiktokConfig(db: PgDb, storeId?: string) {
   if (storeId) {
     return db
       .select()
       .from(storeTiktokConfig)
       .where(eq(storeTiktokConfig.storeId, storeId))
-      .get();
+      .then((rows) => rows[0] ?? null);
   }
   return db
     .select()
     .from(storeTiktokConfig)
     .limit(1)
-    .get();
+    .then((rows) => rows[0] ?? null);
 }
 
 export interface UpsertTiktokConfigData {
@@ -30,7 +30,7 @@ export interface UpsertTiktokConfigData {
 }
 
 export async function upsertTiktokConfig(
-  db: AppDb,
+  db: PgDb,
   storeId: string,
   data: UpsertTiktokConfigData,
 ) {
@@ -62,7 +62,7 @@ export async function upsertTiktokConfig(
       })
       .where(eq(storeTiktokConfig.storeId, storeId))
       .returning()
-      .get();
+      .then((rows) => rows[0] ?? null);
   }
 
   const row = {

@@ -1,10 +1,10 @@
-import { eq, and, like, or, sum, isNull, sql, inArray, getTableColumns } from "drizzle-orm";
-import { products, productCategories, productVariants, productImages, reviews, stockMovements } from "../db/schema";
-import type { AppDb } from "../db/client";
+import { eq, and, ilike, or, sum, isNull, sql, inArray, getTableColumns } from "drizzle-orm";
+import { products, productCategories, productVariants, productImages, reviews, stockMovements } from "../db/schema.pg";
+import type { PgDb } from "../db/client.pg";
 import { safeLikeTerm } from "./search";
 import { sanitizeRichText } from "../lib/sanitize-html";
 
-type BatchStatement = Parameters<AppDb["batch"]>[0][number];
+type BatchStatement = Parameters<PgDb["batch"]>[0][number];
 
 export interface VariantOption {
   name: string;
@@ -81,17 +81,17 @@ function normalizeHandle(handle: string | undefined, name: string, id: string): 
   return toHandle(name, id);
 }
 
-async function buildProductDetail(db: AppDb, productId: string) {
-  const product = await db.select().from(products).where(and(eq(products.id, productId), isNull(products.deletedAt))).get();
+async function buildProductDetail(db: PgDb, productId: string) {
+  const product = await db.select().from(products).where(and(eq(products.id, productId), isNull(products.deletedAt))).then((rows) => rows[0] ?? null);
   if (!product) return null;
 
   const [category, variants, images, totalInventoryRow] = await Promise.all([
     product.categoryId
-      ? db.select().from(productCategories).where(eq(productCategories.id, product.categoryId)).get()
+      ? db.select().from(productCategories).where(eq(productCategories.id, product.categoryId)).then((rows) => rows[0] ?? null)
       : Promise.resolve(null),
-    db.select().from(productVariants).where(eq(productVariants.productId, productId)).orderBy(productVariants.position).all(),
-    db.select().from(productImages).where(eq(productImages.productId, productId)).orderBy(productImages.position).all(),
-    db.select({ total: sum(productVariants.inventory) }).from(productVariants).where(eq(productVariants.productId, productId)).get(),
+    db.select().from(productVariants).where(eq(productVariants.productId, productId)).orderBy(productVariants.position),
+    db.select().from(productImages).where(eq(productImages.productId, productId)).orderBy(productImages.position),
+    db.select({ total: sum(productVariants.inventory) }).from(productVariants).where(eq(productVariants.productId, productId)).then((rows) => rows[0] ?? null),
   ]);
 
   const variantOptions = product.variantOptions ? JSON.parse(product.variantOptions) : null;
@@ -129,7 +129,7 @@ function chunkIds(ids: string[]): string[][] {
   return chunks;
 }
 
-export async function getAllProducts(db: AppDb, filters?: ProductFilters) {
+export async function getAllProducts(db: PgDb, filters?: ProductFilters) {
   const conditions: ReturnType<typeof eq>[] = [];
   conditions.push(isNull(products.deletedAt) as any);
 
@@ -139,8 +139,8 @@ export async function getAllProducts(db: AppDb, filters?: ProductFilters) {
   if (filters?.search) {
     const term = `%${safeLikeTerm(filters.search)}%`;
     conditions.push(or(
-      like(products.name, term),
-      like(products.handle, term),
+      ilike(products.name, term),
+      ilike(products.handle, term),
     ) as any);
   }
 
@@ -155,7 +155,7 @@ export async function getAllProducts(db: AppDb, filters?: ProductFilters) {
     .where(conditions.length ? and(...conditions) : undefined)
     .limit(filters?.limit ?? 50)
     .offset(filters?.offset ?? 0)
-    .all();
+    ;
 
   if (rows.length === 0) return [];
 
@@ -166,7 +166,7 @@ export async function getAllProducts(db: AppDb, filters?: ProductFilters) {
       .from(productVariants)
       .where(inArray(productVariants.productId, chunk))
       .orderBy(productVariants.productId, productVariants.position)
-      .all();
+      ;
     variantRows.push(...chunkRows);
   }
 
@@ -202,11 +202,11 @@ export async function getAllProducts(db: AppDb, filters?: ProductFilters) {
   });
 }
 
-export async function getProductById(db: AppDb, productId: string) {
+export async function getProductById(db: PgDb, productId: string) {
   return buildProductDetail(db, productId);
 }
 
-export async function createProduct(db: AppDb, data: CreateProductData) {
+export async function createProduct(db: PgDb, data: CreateProductData) {
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
   const handle = normalizeHandle(data.handle, data.name, id);
@@ -243,7 +243,7 @@ export async function createProduct(db: AppDb, data: CreateProductData) {
   return buildProductDetail(db, id);
 }
 
-export async function updateProduct(db: AppDb, productId: string, data: UpdateProductData) {
+export async function updateProduct(db: PgDb, productId: string, data: UpdateProductData) {
   const updates: Record<string, unknown> = { updatedAt: new Date().toISOString() };
 
   if (data.name !== undefined) updates.name = data.name;
@@ -272,24 +272,27 @@ export async function updateProduct(db: AppDb, productId: string, data: UpdatePr
   if (data.storeFeatured !== undefined) updates.storeFeatured = data.storeFeatured;
   if (data.shippingProfileId !== undefined) updates.shippingProfileId = data.shippingProfileId ?? null;
 
-  const statements: BatchStatement[] = [
-    db.update(products).set(updates).where(eq(products.id, productId)),
-  ];
-
-  // Simple-product inventory edits are manual adjustments — log them so the
-  // movement ledger keeps reconciling to real stock. Variant products keep
-  // their stock on variants; parent inventory is not ledger material.
-  if (data.inventory !== undefined) {
-    const current = await db
-      .select({ inventory: products.inventory, hasVariants: products.hasVariants, trackInventory: products.trackInventory })
-      .from(products)
-      .where(eq(products.id, productId))
-      .get();
-    if (current?.trackInventory && !current.hasVariants) {
-      const delta = data.inventory - current.inventory;
-      if (delta !== 0) {
-        statements.push(
-          db.insert(stockMovements).values({
+  await db.transaction(async (tx) => {
+    // Read BEFORE writing: the movement delta is measured against the
+    // pre-edit value. Reading after the update would see the new value and
+    // compute a zero delta, silently dropping the ledger entry.
+    let movement: {
+      id: string; productId: string; variantId: null;
+      type: "ADJUSTMENT_ADD" | "ADJUSTMENT_REMOVE";
+      delta: number; qtyBefore: number; qtyAfter: number;
+      reason: string; reference: null; createdBy: string; createdByName: string;
+      createdAt: string;
+    } | null = null;
+    if (data.inventory !== undefined) {
+      const current = await tx
+        .select({ inventory: products.inventory, hasVariants: products.hasVariants, trackInventory: products.trackInventory })
+        .from(products)
+        .where(eq(products.id, productId))
+        .then((rows) => rows[0] ?? null);
+      if (current?.trackInventory && !current.hasVariants) {
+        const delta = data.inventory - current.inventory;
+        if (delta !== 0) {
+          movement = {
             id: crypto.randomUUID(),
             productId,
             variantId: null,
@@ -302,17 +305,18 @@ export async function updateProduct(db: AppDb, productId: string, data: UpdatePr
             createdBy: "system",
             createdByName: "النظام",
             createdAt: new Date().toISOString(),
-          }),
-        );
+          };
+        }
       }
     }
-  }
 
-  await db.batch(statements as [BatchStatement, ...BatchStatement[]]);
+    await tx.update(products).set(updates).where(eq(products.id, productId));
+    if (movement) await tx.insert(stockMovements).values(movement);
+  });
   return buildProductDetail(db, productId);
 }
 
-export async function deleteProduct(db: AppDb, productId: string) {
+export async function deleteProduct(db: PgDb, productId: string) {
   // Hard delete. Callers guarantee no orderProducts reference the product
   // (delete is refused with PRODUCT_HAS_ORDERS otherwise), so removing the
   // row outright is safe and frees the unique handle/sku for reuse — a
@@ -333,7 +337,7 @@ export async function deleteProduct(db: AppDb, productId: string) {
  * constraint violation (500).
  */
 export async function findProductIdentityConflict(
-  db: AppDb,
+  db: PgDb,
   identity: { handle?: string; sku?: string },
 ): Promise<{ field: "handle" | "sku"; existingId: string; deleted: boolean } | null> {
   const conditions = [];
@@ -350,7 +354,7 @@ export async function findProductIdentityConflict(
     })
     .from(products)
     .where(or(...conditions))
-    .get();
+    .then((rows) => rows[0] ?? null);
   if (!row) return null;
 
   const field =
@@ -358,11 +362,11 @@ export async function findProductIdentityConflict(
   return { field, existingId: row.id, deleted: row.deletedAt !== null };
 }
 
-export async function getProductImages(db: AppDb, productId: string) {
+export async function getProductImages(db: PgDb, productId: string) {
   return db
     .select()
     .from(productImages)
     .where(eq(productImages.productId, productId))
     .orderBy(productImages.position)
-    .all();
+    ;
 }

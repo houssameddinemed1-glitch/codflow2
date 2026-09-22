@@ -8,8 +8,8 @@
  * provider. Never return the raw row to a client.
  */
 
-import type { AppDb } from "../db/client";
-import { storeOtpConfig } from "../db/schema";
+import type { PgDb } from "../db/client.pg";
+import { storeOtpConfig } from "../db/schema.pg";
 import { eq } from "drizzle-orm";
 
 export interface OtpConfig {
@@ -21,7 +21,7 @@ export interface OtpConfig {
 }
 
 /** Safe projection — no API key. Truth for "is verification active". */
-export async function getOtpConfig(db: AppDb, storeId: string): Promise<OtpConfig | undefined> {
+export async function getOtpConfig(db: PgDb, storeId: string): Promise<OtpConfig | undefined> {
   const row = await db
     .select({
       storeId: storeOtpConfig.storeId,
@@ -32,20 +32,20 @@ export async function getOtpConfig(db: AppDb, storeId: string): Promise<OtpConfi
     })
     .from(storeOtpConfig)
     .where(eq(storeOtpConfig.storeId, storeId))
-    .get();
+    .then((rows) => rows[0] ?? null);
   return row;
 }
 
 /** Full row including the dzverify API key. Server-side callers only. */
 export async function getOtpConfigRaw(
-  db: AppDb,
+  db: PgDb,
   storeId: string
 ): Promise<typeof storeOtpConfig.$inferSelect | undefined> {
   return db
     .select()
     .from(storeOtpConfig)
     .where(eq(storeOtpConfig.storeId, storeId))
-    .get();
+    .then((rows) => rows[0] ?? null);
 }
 
 export interface UpsertOtpConfigData {
@@ -55,7 +55,7 @@ export interface UpsertOtpConfigData {
 }
 
 export async function upsertOtpConfig(
-  db: AppDb,
+  db: PgDb,
   storeId: string,
   data: UpsertOtpConfigData
 ): Promise<OtpConfig> {
@@ -67,7 +67,7 @@ export async function upsertOtpConfig(
     .select({ id: storeOtpConfig.id })
     .from(storeOtpConfig)
     .where(eq(storeOtpConfig.storeId, storeId))
-    .get();
+    .then((rows) => rows[0] ?? null);
 
   if (existing) {
     const row = await db
@@ -81,7 +81,7 @@ export async function upsertOtpConfig(
         createdAt: storeOtpConfig.createdAt,
         updatedAt: storeOtpConfig.updatedAt,
       })
-      .get();
+      .then((rows) => rows[0] ?? null);
     return row;
   }
 

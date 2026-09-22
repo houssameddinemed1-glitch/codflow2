@@ -26,8 +26,8 @@ import {
   oauthAccessTokens,
   oauthRefreshTokens,
   users,
-} from "../db/schema";
-import type { AppDb } from "../db/client";
+} from "../db/schema.pg";
+import type { PgDb } from "../db/client.pg";
 
 export interface McpConnection {
   clientId:          string;
@@ -56,7 +56,7 @@ export interface ListMcpConnectionsFilter {
 }
 
 export async function listMcpConnections(
-  db: AppDb,
+  db: PgDb,
   filter: ListMcpConnectionsFilter = {},
 ): Promise<McpConnection[]> {
   // D1's bind layer rejects Date — pass milliseconds (integer) so the
@@ -80,7 +80,7 @@ export async function listMcpConnections(
     .from(oauthConsents)
     .innerJoin(oauthClients, eq(oauthConsents.clientId, oauthClients.clientId))
     .where(consentWhere)
-    .all();
+    ;
 
   if (consents.length === 0) return [];
 
@@ -94,7 +94,7 @@ export async function listMcpConnections(
     .from(oauthAccessTokens)
     .where(filter.userId ? eq(oauthAccessTokens.userId, filter.userId) : undefined)
     .groupBy(oauthAccessTokens.userId, oauthAccessTokens.clientId)
-    .all();
+    ;
 
   const liveRefresh = await db
     .select({
@@ -105,13 +105,13 @@ export async function listMcpConnections(
     .from(oauthRefreshTokens)
     .where(filter.userId ? eq(oauthRefreshTokens.userId, filter.userId) : undefined)
     .groupBy(oauthRefreshTokens.userId, oauthRefreshTokens.clientId)
-    .all();
+    ;
 
   const userRows = !filter.userId
     ? await db
         .select({ id: users.id, name: users.name, email: users.email })
         .from(users)
-        .all()
+        
     : [];
   const userMap = new Map(userRows.map((u) => [u.id, u]));
 

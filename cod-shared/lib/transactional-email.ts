@@ -17,7 +17,7 @@
  *     (retried request with the same key): reported as sent.
  */
 
-import type { AppDb } from "../db/client";
+import type { PgDb } from "../db/client.pg";
 import { getEmailConfigRaw } from "../queries/email-config";
 import { getStore } from "../queries/stores";
 import {
@@ -50,7 +50,7 @@ const ERROR_CODES_BY_SENDILI: Record<string, string> = {
 };
 
 export async function sendTransactionalEmail(
-  db: AppDb,
+  db: PgDb,
   email: TransactionalEmail
 ): Promise<TransactionalEmailOutcome> {
   try {

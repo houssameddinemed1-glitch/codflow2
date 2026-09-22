@@ -1,6 +1,6 @@
-import { eq, and, like, sql } from "drizzle-orm";
-import { customerTags, customerTagAssignments, customers } from "../db/schema";
-import type { AppDb } from "../db/client";
+import { eq, and, ilike, sql } from "drizzle-orm";
+import { customerTags, customerTagAssignments, customers } from "../db/schema.pg";
+import type { PgDb } from "../db/client.pg";
 
 export interface CustomerTagFilters {
   search?: string;
@@ -18,10 +18,10 @@ export interface UpdateCustomerTagData {
   color?: string;
 }
 
-export async function getAllTags(db: AppDb, filters?: CustomerTagFilters) {
+export async function getAllTags(db: PgDb, filters?: CustomerTagFilters) {
   const conditions = [];
   if (filters?.search) {
-    conditions.push(like(customerTags.name, `%${filters.search}%`));
+    conditions.push(ilike(customerTags.name, `%${filters.search}%`));
   }
 
   const limit = filters?.limit ?? 50;
@@ -34,20 +34,20 @@ export async function getAllTags(db: AppDb, filters?: CustomerTagFilters) {
       .where(and(...conditions))
       .limit(limit)
       .offset(offset)
-      .all();
+      ;
   }
-  return await db.select().from(customerTags).limit(limit).offset(offset).all();
+  return await db.select().from(customerTags).limit(limit).offset(offset);
 }
 
-export async function getTagById(db: AppDb, tagId: string) {
+export async function getTagById(db: PgDb, tagId: string) {
   return await db
     .select()
     .from(customerTags)
     .where(eq(customerTags.id, tagId))
-    .get();
+    .then((rows) => rows[0] ?? null);
 }
 
-export async function getTagWithCustomers(db: AppDb, tagId: string) {
+export async function getTagWithCustomers(db: PgDb, tagId: string) {
   const tag = await getTagById(db, tagId);
   if (!tag) return null;
 
@@ -64,12 +64,12 @@ export async function getTagWithCustomers(db: AppDb, tagId: string) {
     .from(customerTagAssignments)
     .innerJoin(customers, eq(customerTagAssignments.customerId, customers.id))
     .where(eq(customerTagAssignments.tagId, tagId))
-    .all();
+    ;
 
   return { ...tag, customers: assigned };
 }
 
-export async function createTag(db: AppDb, data: CreateCustomerTagData) {
+export async function createTag(db: PgDb, data: CreateCustomerTagData) {
   const now = new Date().toISOString();
   const tagId = crypto.randomUUID();
 
@@ -86,7 +86,7 @@ export async function createTag(db: AppDb, data: CreateCustomerTagData) {
 }
 
 export async function updateTag(
-  db: AppDb,
+  db: PgDb,
   tagId: string,
   data: UpdateCustomerTagData,
 ) {
@@ -99,11 +99,11 @@ export async function updateTag(
   return getTagById(db, tagId);
 }
 
-export async function deleteTag(db: AppDb, tagId: string) {
+export async function deleteTag(db: PgDb, tagId: string) {
   await db.delete(customerTags).where(eq(customerTags.id, tagId));
 }
 
-export async function assignTag(db: AppDb, tagId: string, customerId: string) {
+export async function assignTag(db: PgDb, tagId: string, customerId: string) {
   const now = new Date().toISOString();
 
   await db
@@ -115,7 +115,7 @@ export async function assignTag(db: AppDb, tagId: string, customerId: string) {
     .select({ count: sql<number>`count(*)` })
     .from(customerTagAssignments)
     .where(eq(customerTagAssignments.tagId, tagId))
-    .get();
+    .then((rows) => rows[0] ?? null);
 
   await db
     .update(customerTags)
@@ -123,7 +123,7 @@ export async function assignTag(db: AppDb, tagId: string, customerId: string) {
     .where(eq(customerTags.id, tagId));
 }
 
-export async function unassignTag(db: AppDb, tagId: string, customerId: string) {
+export async function unassignTag(db: PgDb, tagId: string, customerId: string) {
   await db
     .delete(customerTagAssignments)
     .where(
@@ -138,7 +138,7 @@ export async function unassignTag(db: AppDb, tagId: string, customerId: string) 
     .select({ count: sql<number>`count(*)` })
     .from(customerTagAssignments)
     .where(eq(customerTagAssignments.tagId, tagId))
-    .get();
+    .then((rows) => rows[0] ?? null);
 
   await db
     .update(customerTags)

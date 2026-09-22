@@ -40,8 +40,8 @@ import {
   reviews,
   offers,
   stockMovements,
-} from "../db/schema";
-import type { AppDb } from "../db/client";
+} from "../db/schema.pg";
+import type { PgDb } from "../db/client.pg";
 
 export interface StoreOrderData {
   customerName: string;
@@ -67,8 +67,8 @@ export interface StoreOrderData {
   userAgent?: string;
 }
 
-export async function getStoreConfig(db: AppDb, storeId: string) {
-  const store = await db.select().from(stores).where(eq(stores.id, storeId)).get();
+export async function getStoreConfig(db: PgDb, storeId: string) {
+  const store = await db.select().from(stores).where(eq(stores.id, storeId)).then((rows) => rows[0] ?? null);
   if (!store) return null;
   const [pixelRow, tiktokRow, otpRow, turnstileRow] = await Promise.all([
     db
@@ -79,7 +79,7 @@ export async function getStoreConfig(db: AppDb, storeId: string) {
       })
       .from(storePixelConfig)
       .where(eq(storePixelConfig.storeId, storeId))
-      .get(),
+      .then((rows) => rows[0] ?? null),
     db
       .select({
         pixelId: storeTiktokConfig.pixelId,
@@ -88,19 +88,19 @@ export async function getStoreConfig(db: AppDb, storeId: string) {
       })
       .from(storeTiktokConfig)
       .where(eq(storeTiktokConfig.storeId, storeId))
-      .get(),
+      .then((rows) => rows[0] ?? null),
     db
       .select({ enabled: storeOtpConfig.enabled })
       .from(storeOtpConfig)
       .where(eq(storeOtpConfig.storeId, storeId))
-      .get(),
+      .then((rows) => rows[0] ?? null),
     // Safe projection only — the site key is public by design; the siteverify
     // secret must never reach the storefront payload.
     db
       .select({ enabled: storeTurnstileConfig.enabled, siteKey: storeTurnstileConfig.siteKey })
       .from(storeTurnstileConfig)
       .where(eq(storeTurnstileConfig.storeId, storeId))
-      .get(),
+      .then((rows) => rows[0] ?? null),
   ]);
   // Separate await (not in the batch above) so the established query order
   // — pinned by positional mocks in store-turnstile-projection.test.ts — stays put.
@@ -108,7 +108,7 @@ export async function getStoreConfig(db: AppDb, storeId: string) {
     .select({ variant: storeFormConfig.variant })
     .from(storeFormConfig)
     .where(eq(storeFormConfig.storeId, storeId))
-    .get();
+    .then((rows) => rows[0] ?? null);
   return {
     ...store,
     pixelId: pixelRow?.enabled ? pixelRow.pixelId : null,
@@ -134,7 +134,7 @@ function chunkIds(ids: string[]): string[][] {
 }
 
 export async function getStoreProducts(
-  db: AppDb,
+  db: PgDb,
   params: { featured?: boolean; categoryId?: string; limit?: number },
 ) {
   const conditions: any[] = [
@@ -157,7 +157,7 @@ export async function getStoreProducts(
     .where(and(...conditions))
     .orderBy(desc(products.storeFeatured), desc(products.createdAt))
     .limit(params.limit ?? 24)
-    .all();
+    ;
 
   if (rows.length === 0) return [];
 
@@ -183,11 +183,11 @@ export async function getStoreProducts(
 
   type ImageRow = typeof productImages.$inferSelect;
   type InventoryRow = { productId: string; total: number };
-  type BatchStatement = Parameters<AppDb["batch"]>[0][number];
+  type BatchStatement = Parameters<PgDb["batch"]>[0][number];
 
-  const statements: BatchStatement[] = [...imageStatements, ...inventoryStatements];
-  const batchResults = (await db.batch(
-    statements as [BatchStatement, ...BatchStatement[]],
+  const statements = [...imageStatements, ...inventoryStatements];
+  const batchResults = (await Promise.all(
+    statements,
   )) as unknown as Array<Array<ImageRow | InventoryRow>>;
 
   const imageRows = batchResults.slice(0, imageStatements.length).flat() as ImageRow[];
@@ -228,7 +228,7 @@ export async function getStoreProducts(
  * (unlisted) product still renders there; the other gates still apply.
  */
 export async function getStoreProductByHandle(
-  db: AppDb,
+  db: PgDb,
   handle: string,
   opts?: { allowUnlisted?: boolean },
 ) {
@@ -244,7 +244,7 @@ export async function getStoreProductByHandle(
     .select()
     .from(products)
     .where(and(...conditions))
-    .get();
+    .then((rows) => rows[0] ?? null);
 
   if (!product) return null;
 
@@ -254,7 +254,7 @@ export async function getStoreProductByHandle(
           .select()
           .from(productCategories)
           .where(eq(productCategories.id, product.categoryId))
-          .get()
+          .then((rows) => rows[0] ?? null)
       : null,
     db
       .select()
@@ -263,13 +263,13 @@ export async function getStoreProductByHandle(
         and(eq(productVariants.productId, product.id), eq(productVariants.active, true)),
       )
       .orderBy(productVariants.position)
-      .all(),
+      ,
     db
       .select()
       .from(productImages)
       .where(eq(productImages.productId, product.id))
       .orderBy(productImages.position)
-      .all(),
+      ,
     db
       .select({
         avgRating: sql<number | null>`ROUND(AVG(${reviews.rating}), 1)`,
@@ -277,7 +277,7 @@ export async function getStoreProductByHandle(
       })
       .from(reviews)
       .where(and(eq(reviews.productId, product.id), eq(reviews.status, "approved")))
-      .get(),
+      .then((rows) => rows[0] ?? null),
   ]);
 
   const now = new Date().toISOString();
@@ -293,7 +293,7 @@ export async function getStoreProductByHandle(
       ),
     )
     .orderBy(offers.createdAt)
-    .all();
+    ;
 
   const resolvedOffers = await Promise.all(
     offerRows.map(async (offer) => {
@@ -302,7 +302,7 @@ export async function getStoreProductByHandle(
             .select({ id: products.id, name: products.name })
             .from(products)
             .where(eq(products.id, offer.rewardProductId))
-            .get()
+            .then((rows) => rows[0] ?? null)
         : null;
 
       const rewardVariant = offer.rewardVariantId
@@ -310,7 +310,7 @@ export async function getStoreProductByHandle(
             .select({ id: productVariants.id, variations: productVariants.variations })
             .from(productVariants)
             .where(eq(productVariants.id, offer.rewardVariantId))
-            .get()
+            .then((rows) => rows[0] ?? null)
         : null;
 
       return {
@@ -358,20 +358,20 @@ export async function getStoreProductByHandle(
   };
 }
 
-export async function getStoreCategories(db: AppDb) {
-  return db.select().from(productCategories).orderBy(productCategories.position).all();
+export async function getStoreCategories(db: PgDb) {
+  return db.select().from(productCategories).orderBy(productCategories.position);
 }
 
-export async function getStoreCommunes(db: AppDb, wilayaId: number) {
+export async function getStoreCommunes(db: PgDb, wilayaId: number) {
   return db
     .select({ id: communes.id, name: communes.name, nameAr: communes.nameAr })
     .from(communes)
     .where(eq(communes.wilayaId, wilayaId))
-    .all();
+    ;
 }
 
 export async function findOrCreateCustomer(
-  db: AppDb,
+  db: PgDb,
   data: { phone: string; name: string; wilayaId: number; communeId?: string },
 ) {
   const [wilayaRecord, communeRecord] = await Promise.all([
@@ -379,13 +379,13 @@ export async function findOrCreateCustomer(
       .select({ nameAr: wilayas.nameAr })
       .from(wilayas)
       .where(eq(wilayas.id, data.wilayaId))
-      .get(),
+      .then((rows) => rows[0] ?? null),
     data.communeId
       ? db
           .select({ nameAr: communes.nameAr })
           .from(communes)
           .where(eq(communes.id, data.communeId))
-          .get()
+          .then((rows) => rows[0] ?? null)
       : Promise.resolve(null),
   ]);
 
@@ -434,7 +434,7 @@ export async function findOrCreateCustomer(
  *    restriction).
  */
 export async function getDeliveryFee(
-  db: AppDb,
+  db: PgDb,
   wilayaId: number,
   deliveryType: "home" | "stop_desk",
 ): Promise<number | null> {
@@ -442,7 +442,7 @@ export async function getDeliveryFee(
     .select()
     .from(shippingProfiles)
     .where(eq(shippingProfiles.isDefault, true))
-    .get();
+    .then((rows) => rows[0] ?? null);
 
   if (!profile) return 0;
 
@@ -455,7 +455,7 @@ export async function getDeliveryFee(
         eq(shippingRules.wilayaId, wilayaId),
       ),
     )
-    .get();
+    .then((rows) => rows[0] ?? null);
 
   if (!rule) return null;
   if (deliveryType === "home" && !rule.homeEnabled) return null;
@@ -463,19 +463,19 @@ export async function getDeliveryFee(
   return deliveryType === "stop_desk" ? rule.stopDeskPrice : rule.homePrice;
 }
 
-export async function getShippingRates(db: AppDb) {
+export async function getShippingRates(db: PgDb) {
   const profile = await db
     .select()
     .from(shippingProfiles)
     .where(eq(shippingProfiles.isDefault, true))
-    .get();
+    .then((rows) => rows[0] ?? null);
   if (!profile) return {};
 
   const rules = await db
     .select()
     .from(shippingRules)
     .where(eq(shippingRules.profileId, profile.id))
-    .all();
+    ;
 
   return Object.fromEntries(
     rules.map((r) => [r.wilayaId, { home: r.homePrice, stopDesk: r.stopDeskPrice }]),
@@ -485,7 +485,7 @@ export async function getShippingRates(db: AppDb) {
 // ─── Offer selection helper ───────────────────────────────────────────────────
 
 export async function selectApplicableOffer(
-  db: AppDb,
+  db: PgDb,
   productId: string,
   quantity: number,
   variantId: string | null | undefined,
@@ -508,7 +508,7 @@ export async function selectApplicableOffer(
       .select()
       .from(offers)
       .where(and(eq(offers.id, offerId), baseConditions))
-      .get();
+      .then((rows) => rows[0] ?? null);
     if (explicit) candidates = [explicit];
     else {
       candidates = await db
@@ -516,7 +516,7 @@ export async function selectApplicableOffer(
         .from(offers)
         .where(baseConditions)
         .orderBy(desc(offers.triggerQuantity))
-        .all();
+        ;
     }
   } else {
     candidates = await db
@@ -524,7 +524,7 @@ export async function selectApplicableOffer(
       .from(offers)
       .where(baseConditions)
       .orderBy(desc(offers.triggerQuantity))
-      .all();
+      ;
   }
 
   for (const offer of candidates) {
@@ -563,7 +563,7 @@ function groupVariantSelections(
 // ─── Stock pre-check (before order creation) ─────────────────────────────────
 
 export async function checkStoreOrderStock(
-  db: AppDb,
+  db: PgDb,
   params: {
     productId: string;
     variantId: string | null;
@@ -575,7 +575,7 @@ export async function checkStoreOrderStock(
     .select({ trackInventory: products.trackInventory, inventory: products.inventory })
     .from(products)
     .where(eq(products.id, params.productId))
-    .get();
+    .then((rows) => rows[0] ?? null);
 
   if (!productRow?.trackInventory) return null;
 
@@ -586,7 +586,7 @@ export async function checkStoreOrderStock(
         .select({ inventory: productVariants.inventory })
         .from(productVariants)
         .where(eq(productVariants.id, group.variantId))
-        .get();
+        .then((rows) => rows[0] ?? null);
       if ((row?.inventory ?? 0) < group.count) {
         return "بعض الخيارات المطلوبة غير متوفرة حالياً. يرجى اختيار خياراً آخر.";
       }
@@ -596,7 +596,7 @@ export async function checkStoreOrderStock(
       .select({ inventory: productVariants.inventory })
       .from(productVariants)
       .where(eq(productVariants.id, params.variantId))
-      .get();
+      .then((rows) => rows[0] ?? null);
     if ((row?.inventory ?? 0) < params.quantity) {
       return "هذا المنتج غير متوفر بالخيار المطلوب. يرجى اختيار خياراً آخر.";
     }
@@ -621,23 +621,21 @@ interface DeductStockInput {
   now: string;
 }
 
-type BatchStatement = Parameters<AppDb["batch"]>[0][number];
-
 /**
- * Build the write pair (movement log + atomic deduction) for a batch.
+ * Apply the write pair (movement log + atomic deduction) inside a transaction.
  *
  * The guard lives in the movement INSERT, not just the UPDATE: qtyBefore and
  * qtyAfter are subselects with the availability predicate
  * `inventory >= quantity` baked in. When stock cannot cover the deduction,
  * the subselects return NULL, the NOT NULL constraint on stock_movements
- * fails, and D1 rolls back the ENTIRE batch — order, lines, stats, and all.
- * One round trip, race-free, and the movement log values come from the
+ * fails, and Postgres rolls back the ENTIRE transaction — order, lines,
+ * stats, and all. Race-free, and the movement log values come from the
  * database itself rather than a racy pre-read.
  */
-function buildDeductStatements(
-  db: AppDb,
+async function applyDeduct(
+  tx: Parameters<Parameters<PgDb["transaction"]>[0]>[0],
   input: DeductStockInput,
-): BatchStatement[] {
+) {
   const { productId, variantId, quantity, orderId, customerId, customerName, now } = input;
 
   const guard =
@@ -647,48 +645,46 @@ function buildDeductStatements(
   const inventoryColumn =
     variantId !== null ? productVariants.inventory : products.inventory;
 
-  const guardedUpdate =
-    variantId !== null
-      ? db
-          .update(productVariants)
-          .set({ inventory: sql`${productVariants.inventory} - ${quantity}`, updatedAt: now })
-          .where(
-            and(
-              eq(productVariants.id, variantId),
-              sql`${productVariants.inventory} >= ${quantity}`,
-            ),
-          )
-      : db
-          .update(products)
-          .set({ inventory: sql`${products.inventory} - ${quantity}`, updatedAt: now })
-          .where(
-            and(
-              eq(products.id, productId),
-              sql`${products.inventory} >= ${quantity}`,
-            ),
-          );
+  await tx.insert(stockMovements).values({
+    id: crypto.randomUUID(),
+    productId,
+    variantId,
+    type: "ORDER_DEDUCTED",
+    delta: -quantity,
+    qtyBefore: sql`(SELECT ${inventoryColumn} ${guard})`,
+    qtyAfter: sql`(SELECT ${inventoryColumn} - ${quantity} ${guard})`,
+    reason: null,
+    reference: orderId,
+    createdBy: customerId,
+    createdByName: customerName,
+    createdAt: now,
+  });
 
-  return [
-    db.insert(stockMovements).values({
-      id: crypto.randomUUID(),
-      productId,
-      variantId,
-      type: "ORDER_DEDUCTED",
-      delta: -quantity,
-      qtyBefore: sql`(SELECT ${inventoryColumn} ${guard})`,
-      qtyAfter: sql`(SELECT ${inventoryColumn} - ${quantity} ${guard})`,
-      reason: null,
-      reference: orderId,
-      createdBy: customerId,
-      createdByName: customerName,
-      createdAt: now,
-    }),
-    guardedUpdate,
-  ];
+  if (variantId !== null) {
+    await tx
+      .update(productVariants)
+      .set({ inventory: sql`${productVariants.inventory} - ${quantity}`, updatedAt: now })
+      .where(
+        and(
+          eq(productVariants.id, variantId),
+          sql`${productVariants.inventory} >= ${quantity}`,
+        ),
+      );
+  } else {
+    await tx
+      .update(products)
+      .set({ inventory: sql`${products.inventory} - ${quantity}`, updatedAt: now })
+      .where(
+        and(
+          eq(products.id, productId),
+          sql`${products.inventory} >= ${quantity}`,
+        ),
+      );
+  }
 }
 
 export async function createStoreOrder(
-  db: AppDb,
+  db: PgDb,
   data: StoreOrderData & {
     customerId: string;
     customerName: string;
@@ -721,7 +717,7 @@ export async function createStoreOrder(
     .select({ price: products.price, trackInventory: products.trackInventory })
     .from(products)
     .where(and(eq(products.id, data.productId), isNull(products.deletedAt)))
-    .get();
+    .then((rows) => rows[0] ?? null);
 
   const authoritativeUnitPrice = (() => {
     if (data.variantSelections && data.variantSelections.length > 0) {
@@ -756,7 +752,7 @@ export async function createStoreOrder(
         .select({ sku: productVariants.sku, price: productVariants.price })
         .from(productVariants)
         .where(eq(productVariants.id, group.variantId))
-        .get();
+        .then((rows) => rows[0] ?? null);
       linesPriceTotal += (varRow?.price ?? 0) * group.count;
       lineRows.push({
         id: crypto.randomUUID(),
@@ -778,7 +774,7 @@ export async function createStoreOrder(
       .select({ sku: productVariants.sku, price: productVariants.price })
       .from(productVariants)
       .where(eq(productVariants.id, data.variantId))
-      .get();
+      .then((rows) => rows[0] ?? null);
     const unitPrice = varRow?.price ?? authoritativeUnitPrice ?? 0;
     lineRows.push({
       id: crypto.randomUUID(),
@@ -800,7 +796,7 @@ export async function createStoreOrder(
       .select({ sku: products.sku })
       .from(products)
       .where(eq(products.id, data.productId))
-      .get();
+      .then((rows) => rows[0] ?? null);
     itemSku = prodSkuRow?.sku ?? null;
     const unitPrice = authoritativeUnitPrice ?? 0;
     lineRows.push({
@@ -848,7 +844,7 @@ export async function createStoreOrder(
           ),
         )
         .orderBy(asc(productVariants.position))
-        .get();
+        .then((rows) => rows[0] ?? null);
       if (defaultVariant) {
         resolvedRewardVariantId = defaultVariant.id;
         resolvedRewardVariantLabel = Object.values(
@@ -860,7 +856,7 @@ export async function createStoreOrder(
         .select({ variations: productVariants.variations })
         .from(productVariants)
         .where(eq(productVariants.id, resolvedRewardVariantId))
-        .get();
+        .then((rows) => rows[0] ?? null);
       if (rewardVariantRow) {
         resolvedRewardVariantLabel = Object.values(
           JSON.parse(rewardVariantRow.variations) as Record<string, string>,
@@ -873,7 +869,7 @@ export async function createStoreOrder(
         .select({ name: products.name, trackInventory: products.trackInventory })
         .from(products)
         .where(eq(products.id, activeOffer.rewardProductId))
-        .get();
+        .then((rows) => rows[0] ?? null);
 
       let rewardInStock = true;
       if (rewardProductRow?.trackInventory) {
@@ -882,14 +878,14 @@ export async function createStoreOrder(
             .select({ inventory: productVariants.inventory })
             .from(productVariants)
             .where(eq(productVariants.id, resolvedRewardVariantId))
-            .get();
+            .then((rows) => rows[0] ?? null);
           rewardInStock = (rv?.inventory ?? 0) >= activeOffer.rewardQuantity;
         } else {
           const rp = await db
             .select({ inventory: products.inventory })
             .from(products)
             .where(eq(products.id, activeOffer.rewardProductId))
-            .get();
+            .then((rows) => rows[0] ?? null);
           rewardInStock = (rp?.inventory ?? 0) >= activeOffer.rewardQuantity;
         }
       }
@@ -901,14 +897,14 @@ export async function createStoreOrder(
             .select({ sku: productVariants.sku })
             .from(productVariants)
             .where(eq(productVariants.id, resolvedRewardVariantId))
-            .get();
+            .then((rows) => rows[0] ?? null);
           rewardSku = rv?.sku ?? null;
         } else if (activeOffer.rewardProductId) {
           const rp = await db
             .select({ sku: products.sku })
             .from(products)
             .where(eq(products.id, activeOffer.rewardProductId))
-            .get();
+            .then((rows) => rows[0] ?? null);
           rewardSku = rp?.sku ?? null;
         }
         rewardLine = {
@@ -946,7 +942,7 @@ export async function createStoreOrder(
     .select({ trackInventory: products.trackInventory })
     .from(products)
     .where(eq(products.id, data.productId))
-    .get();
+    .then((rows) => rows[0] ?? null);
 
   const deductions: DeductStockInput[] = [];
   if (productRow?.trackInventory) {
@@ -976,10 +972,10 @@ export async function createStoreOrder(
   }
   if (rewardDeduct) deductions.push(rewardDeduct);
 
-  // ── Commit phase (one atomic batch) ──────────────────────────────────────
+  // ── Commit phase (one atomic transaction) ────────────────────────────────
 
-  const statements: BatchStatement[] = [
-    db.insert(orders).values({
+  await db.transaction(async (tx) => {
+    await tx.insert(orders).values({
       id,
       orderNumber,
       customerId: data.customerId,
@@ -1004,39 +1000,35 @@ export async function createStoreOrder(
       landingPageId: data.landingPageId ?? null,
       createdAt: now,
       updatedAt: now,
-    }),
-  ];
+    });
 
-  for (const line of lineRows) {
-    statements.push(db.insert(orderProducts).values(line));
-  }
-  if (rewardLine) {
-    statements.push(db.insert(orderProducts).values(rewardLine));
-  }
+    for (const line of lineRows) {
+      await tx.insert(orderProducts).values(line);
+    }
+    if (rewardLine) {
+      await tx.insert(orderProducts).values(rewardLine);
+    }
 
-  statements.push(
-    db.insert(orderStatusHistory).values({
+    await tx.insert(orderStatusHistory).values({
       id: crypto.randomUUID(),
       orderId: id,
       status: "new",
       timestamp: now,
       by: null,
-    }),
-    db
+    });
+    await tx
       .update(customers)
       .set({
         totalOrders: sql`${customers.totalOrders} + 1`,
         totalSpent: sql`${customers.totalSpent} + ${price}`,
         lastOrderAt: now,
       })
-      .where(eq(customers.id, data.customerId)),
-  );
+      .where(eq(customers.id, data.customerId));
 
-  for (const input of deductions) {
-    statements.push(...buildDeductStatements(db, input));
-  }
-
-  await db.batch(statements as [BatchStatement, ...BatchStatement[]]);
+    for (const input of deductions) {
+      await applyDeduct(tx, input);
+    }
+  });
 
   return {
     id,
@@ -1051,7 +1043,7 @@ export async function createStoreOrder(
 // ─── Reviews ──────────────────────────────────────────────────────────────────
 
 export async function getApprovedProductReviews(
-  db: AppDb,
+  db: PgDb,
   storeId: string,
   productId: string,
   limit = 20,
@@ -1063,7 +1055,7 @@ export async function getApprovedProductReviews(
     eq(reviews.status, "approved"),
   );
 
-  const [rows, countRows] = await db.batch([
+  const [rows, countRows] = await Promise.all([
     db
       .select()
       .from(reviews)
@@ -1093,7 +1085,7 @@ export async function getApprovedProductReviews(
  * store the UUID on the review row as the stable FK.
  */
 export async function findOrderForReview(
-  db: AppDb,
+  db: PgDb,
   _storeId: string,
   orderNumber: string,
 ) {
@@ -1107,19 +1099,19 @@ export async function findOrderForReview(
     .from(orders)
     .innerJoin(customers, eq(orders.customerId, customers.id))
     .where(eq(orders.orderNumber, orderNumber))
-    .get();
+    .then((rows) => rows[0] ?? null);
 
   if (!order) return null;
 
   return order;
 }
 
-export async function getExistingReviewByOrder(db: AppDb, orderId: string) {
-  return db.select().from(reviews).where(eq(reviews.orderId, orderId)).get();
+export async function getExistingReviewByOrder(db: PgDb, orderId: string) {
+  return db.select().from(reviews).where(eq(reviews.orderId, orderId)).then((rows) => rows[0] ?? null);
 }
 
 export async function createReview(
-  db: AppDb,
+  db: PgDb,
   data: {
     storeId: string;
     productId: string;
@@ -1154,7 +1146,7 @@ export async function createReview(
 }
 
 export async function validateOrderSkus(
-  db: AppDb,
+  db: PgDb,
   productId: string,
   variantId?: string,
   variantSelections?: { variantId: string }[],
@@ -1166,7 +1158,7 @@ export async function validateOrderSkus(
         .select({ sku: productVariants.sku })
         .from(productVariants)
         .where(eq(productVariants.id, vid))
-        .get();
+        .then((rows) => rows[0] ?? null);
       if (!row?.sku) return { missing: "variant", id: vid };
     }
     return null;
@@ -1177,7 +1169,7 @@ export async function validateOrderSkus(
       .select({ sku: productVariants.sku })
       .from(productVariants)
       .where(eq(productVariants.id, variantId))
-      .get();
+      .then((rows) => rows[0] ?? null);
     if (!row?.sku) return { missing: "variant", id: variantId };
     return null;
   }
@@ -1186,7 +1178,7 @@ export async function validateOrderSkus(
     .select({ sku: products.sku })
     .from(products)
     .where(eq(products.id, productId))
-    .get();
+    .then((rows) => rows[0] ?? null);
   if (!row?.sku) return { missing: "product", id: productId };
   return null;
 }

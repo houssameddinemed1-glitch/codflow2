@@ -5,8 +5,8 @@
  */
 
 import { eq, and, desc, sql, isNull } from "drizzle-orm";
-import { products, productVariants, stockMovements } from "../db/schema";
-import type { AppDb } from "../db/client";
+import { products, productVariants, stockMovements } from "../db/schema.pg";
+import type { PgDb } from "../db/client.pg";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -82,7 +82,7 @@ export interface UpdateThresholdData {
 // ─── Stock History ────────────────────────────────────────────────────────────
 
 export async function getStockHistory(
-  db: AppDb,
+  db: PgDb,
   productId: string,
   filters: StockHistoryFilters,
 ): Promise<{ movements: StockMovementRow[]; total: number }> {
@@ -93,7 +93,7 @@ export async function getStockHistory(
 
   const whereClause = and(...conditions)!;
 
-  const [rows, countRows] = await db.batch([
+  const [rows, countRows] = await Promise.all([
     db
       .select()
       .from(stockMovements)
@@ -183,10 +183,10 @@ function toAlertItem(row: TrackedSkuRow): StockAlertItem {
 
 const SKU_ORDER = sql` ORDER BY is_out_of_stock DESC, inventory ASC, product_id ASC, variant_id ASC`;
 
-export async function getStockOverview(db: AppDb): Promise<StockOverview> {
-  const rows = await db.all<TrackedSkuRow>(
+export async function getStockOverview(db: PgDb): Promise<StockOverview> {
+  const rows = (await db.execute(
     sql`${trackedSkuSql(false)}${SKU_ORDER}`,
-  );
+  )) as unknown as TrackedSkuRow[];
 
   const outOfStockItems: StockAlertItem[] = [];
   const lowStockItems: StockAlertItem[] = [];
@@ -216,15 +216,16 @@ export async function getStockOverview(db: AppDb): Promise<StockOverview> {
 // ─── Stock Alerts ─────────────────────────────────────────────────────────────
 
 export async function getStockAlerts(
-  db: AppDb,
+  db: PgDb,
   filters: StockAlertsFilters,
 ): Promise<{ items: StockAlertItem[]; total: number }> {
-  const rows = await db.all<TrackedSkuRow>(
+  const rows = (await db.execute(
     sql`${trackedSkuSql(true)}${SKU_ORDER} LIMIT ${filters.limit} OFFSET ${filters.offset}`,
-  );
-  const totalRow = await db.get<{ total: number }>(
+  )) as unknown as TrackedSkuRow[];
+  const totalRows = (await db.execute(
     sql`SELECT COUNT(*) AS total FROM (${trackedSkuSql(true)})`,
-  );
+  )) as unknown as Array<{ total: number }>;
+  const totalRow = totalRows[0] ?? null;
 
   return {
     items: rows.map(toAlertItem),
@@ -235,7 +236,7 @@ export async function getStockAlerts(
 // ─── Update Threshold ─────────────────────────────────────────────────────────
 
 export async function updateProductThreshold(
-  db: AppDb,
+  db: PgDb,
   productId: string,
   data: UpdateThresholdData,
 ): Promise<boolean> {
@@ -243,7 +244,7 @@ export async function updateProductThreshold(
     .select({ id: products.id })
     .from(products)
     .where(and(eq(products.id, productId), isNull(products.deletedAt)))
-    .get();
+    .then((rows) => rows[0] ?? null);
   if (!existing) return false;
 
   await db
@@ -254,7 +255,7 @@ export async function updateProductThreshold(
 }
 
 export async function updateVariantThreshold(
-  db: AppDb,
+  db: PgDb,
   variantId: string,
   productId: string,
   data: UpdateThresholdData,
@@ -263,7 +264,7 @@ export async function updateVariantThreshold(
     .select({ id: productVariants.id })
     .from(productVariants)
     .where(and(eq(productVariants.id, variantId), eq(productVariants.productId, productId)))
-    .get();
+    .then((rows) => rows[0] ?? null);
   if (!existing) return false;
 
   await db
@@ -276,7 +277,7 @@ export async function updateVariantThreshold(
 // ─── Internal helper (exposed for server-side adjustStock) ───────────────────
 
 export async function getProductInventory(
-  db: AppDb,
+  db: PgDb,
   productId: string,
   variantId: string | null,
 ): Promise<{ inventory: number; exists: boolean }> {
@@ -290,7 +291,7 @@ export async function getProductInventory(
           eq(productVariants.productId, productId),
         ),
       )
-      .get();
+      .then((rows) => rows[0] ?? null);
     return row ? { inventory: row.inventory, exists: true } : { inventory: 0, exists: false };
   }
 
@@ -298,6 +299,6 @@ export async function getProductInventory(
     .select({ inventory: products.inventory })
     .from(products)
     .where(and(eq(products.id, productId), isNull(products.deletedAt)))
-    .get();
+    .then((rows) => rows[0] ?? null);
   return row ? { inventory: row.inventory, exists: true } : { inventory: 0, exists: false };
 }

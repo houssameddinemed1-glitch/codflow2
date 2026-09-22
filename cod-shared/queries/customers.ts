@@ -4,7 +4,7 @@
  * deleteCustomer stays in cod-server because it raises BusinessLogicError.
  */
 
-import { eq, and, like, or, desc, exists, sql } from "drizzle-orm";
+import { eq, and, ilike, or, desc, exists, sql } from "drizzle-orm";
 import {
   customers,
   orders,
@@ -15,8 +15,8 @@ import {
   customerTagAssignments,
   wilayas,
   communes,
-} from "../db/schema";
-import type { AppDb } from "../db/client";
+} from "../db/schema.pg";
+import type { PgDb } from "../db/client.pg";
 import { safeLikeTerm } from "./search";
 
 export interface CustomerFilters {
@@ -46,7 +46,7 @@ export interface UpdateCustomerData {
   address?: string | null;
 }
 
-export async function getAllCustomers(db: AppDb, filters?: CustomerFilters) {
+export async function getAllCustomers(db: PgDb, filters?: CustomerFilters) {
   const conditions = [];
 
   if (filters?.wilayaId) {
@@ -57,8 +57,8 @@ export async function getAllCustomers(db: AppDb, filters?: CustomerFilters) {
     const term = `%${safeLikeTerm(filters.search)}%`;
     conditions.push(
       or(
-        like(customers.name, term),
-        like(customers.phone, term),
+        ilike(customers.name, term),
+        ilike(customers.phone, term),
       ),
     );
   }
@@ -105,17 +105,17 @@ export async function getAllCustomers(db: AppDb, filters?: CustomerFilters) {
       .where(and(...conditions))
       .limit(limit)
       .offset(offset)
-      .all();
+      ;
   }
-  return await db.select().from(customers).limit(limit).offset(offset).all();
+  return await db.select().from(customers).limit(limit).offset(offset);
 }
 
-export async function getCustomerById(db: AppDb, customerId: string) {
+export async function getCustomerById(db: PgDb, customerId: string) {
   const customer = await db
     .select()
     .from(customers)
     .where(eq(customers.id, customerId))
-    .get();
+    .then((rows) => rows[0] ?? null);
 
   if (!customer) {
     return null;
@@ -127,7 +127,7 @@ export async function getCustomerById(db: AppDb, customerId: string) {
     .where(eq(orders.customerId, customerId))
     .orderBy(desc(orders.createdAt))
     .limit(10)
-    .all();
+    ;
 
   return {
     ...customer,
@@ -135,15 +135,15 @@ export async function getCustomerById(db: AppDb, customerId: string) {
   };
 }
 
-export async function getCustomerByPhone(db: AppDb, phone: string) {
+export async function getCustomerByPhone(db: PgDb, phone: string) {
   return await db
     .select()
     .from(customers)
     .where(eq(customers.phone, phone))
-    .get();
+    .then((rows) => rows[0] ?? null);
 }
 
-export async function createCustomer(db: AppDb, customerData: CreateCustomerData) {
+export async function createCustomer(db: PgDb, customerData: CreateCustomerData) {
   const now = new Date().toISOString();
   const customerId = crypto.randomUUID();
 
@@ -151,7 +151,7 @@ export async function createCustomer(db: AppDb, customerData: CreateCustomerData
     .select({ nameAr: wilayas.nameAr })
     .from(wilayas)
     .where(eq(wilayas.id, customerData.wilayaId))
-    .get();
+    .then((rows) => rows[0] ?? null);
 
   let communeName: string | null = null;
   if (customerData.communeId) {
@@ -159,7 +159,7 @@ export async function createCustomer(db: AppDb, customerData: CreateCustomerData
       .select({ nameAr: communes.nameAr })
       .from(communes)
       .where(eq(communes.id, customerData.communeId))
-      .get();
+      .then((rows) => rows[0] ?? null);
     communeName = communeRow?.nameAr ?? null;
   }
 
@@ -185,7 +185,7 @@ export async function createCustomer(db: AppDb, customerData: CreateCustomerData
 }
 
 export async function updateCustomer(
-  db: AppDb,
+  db: PgDb,
   customerId: string,
   updates: UpdateCustomerData,
 ) {
@@ -196,7 +196,7 @@ export async function updateCustomer(
       .select({ nameAr: wilayas.nameAr })
       .from(wilayas)
       .where(eq(wilayas.id, updates.wilayaId))
-      .get();
+      .then((rows) => rows[0] ?? null);
     updateData.wilaya = wilayaRow?.nameAr ?? String(updates.wilayaId);
   }
 
@@ -208,7 +208,7 @@ export async function updateCustomer(
         .select({ nameAr: communes.nameAr })
         .from(communes)
         .where(eq(communes.id, updates.communeId))
-        .get();
+        .then((rows) => rows[0] ?? null);
       updateData.commune = communeRow?.nameAr ?? null;
     }
   }
@@ -217,7 +217,7 @@ export async function updateCustomer(
   return getCustomerById(db, customerId);
 }
 
-export async function getOrdersByCustomerId(db: AppDb, customerId: string) {
+export async function getOrdersByCustomerId(db: PgDb, customerId: string) {
   const customerOrders = await db
     .select({
       id: orders.id,
@@ -235,7 +235,7 @@ export async function getOrdersByCustomerId(db: AppDb, customerId: string) {
     .leftJoin(communes, eq(orders.communeId, communes.id))
     .where(eq(orders.customerId, customerId))
     .orderBy(desc(orders.createdAt))
-    .all();
+    ;
 
   const ordersWithHistory = await Promise.all(
     customerOrders.map(async (order) => {
@@ -243,7 +243,7 @@ export async function getOrdersByCustomerId(db: AppDb, customerId: string) {
         .select()
         .from(orderStatusHistory)
         .where(eq(orderStatusHistory.orderId, order.id))
-        .all();
+        ;
 
       return {
         ...order,
@@ -257,7 +257,7 @@ export async function getOrdersByCustomerId(db: AppDb, customerId: string) {
   return ordersWithHistory;
 }
 
-export async function getCustomerGroupMemberships(db: AppDb, customerId: string) {
+export async function getCustomerGroupMemberships(db: PgDb, customerId: string) {
   return await db
     .select({
       id: customerGroups.id,
@@ -272,10 +272,10 @@ export async function getCustomerGroupMemberships(db: AppDb, customerId: string)
     .from(customerGroupMembers)
     .innerJoin(customerGroups, eq(customerGroups.id, customerGroupMembers.groupId))
     .where(eq(customerGroupMembers.customerId, customerId))
-    .all();
+    ;
 }
 
-export async function getCustomerTagMemberships(db: AppDb, customerId: string) {
+export async function getCustomerTagMemberships(db: PgDb, customerId: string) {
   return await db
     .select({
       id: customerTags.id,
@@ -289,5 +289,5 @@ export async function getCustomerTagMemberships(db: AppDb, customerId: string) {
     .from(customerTagAssignments)
     .innerJoin(customerTags, eq(customerTags.id, customerTagAssignments.tagId))
     .where(eq(customerTagAssignments.customerId, customerId))
-    .all();
+    ;
 }

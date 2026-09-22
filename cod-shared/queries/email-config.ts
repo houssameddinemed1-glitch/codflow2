@@ -8,8 +8,8 @@
  * Never return the raw row to a client.
  */
 
-import type { AppDb } from "../db/client";
-import { storeEmailConfig } from "../db/schema";
+import type { PgDb } from "../db/client.pg";
+import { storeEmailConfig } from "../db/schema.pg";
 import { eq } from "drizzle-orm";
 
 export interface EmailConfig {
@@ -22,7 +22,7 @@ export interface EmailConfig {
 }
 
 /** Safe projection — no API key. Truth for "is email sending active". */
-export async function getEmailConfig(db: AppDb, storeId: string): Promise<EmailConfig | undefined> {
+export async function getEmailConfig(db: PgDb, storeId: string): Promise<EmailConfig | undefined> {
   const row = await db
     .select({
       storeId: storeEmailConfig.storeId,
@@ -34,20 +34,20 @@ export async function getEmailConfig(db: AppDb, storeId: string): Promise<EmailC
     })
     .from(storeEmailConfig)
     .where(eq(storeEmailConfig.storeId, storeId))
-    .get();
+    .then((rows) => rows[0] ?? null);
   return row;
 }
 
 /** Full row including the Sendili API key. Server-side callers only. */
 export async function getEmailConfigRaw(
-  db: AppDb,
+  db: PgDb,
   storeId: string
 ): Promise<typeof storeEmailConfig.$inferSelect | undefined> {
   return db
     .select()
     .from(storeEmailConfig)
     .where(eq(storeEmailConfig.storeId, storeId))
-    .get();
+    .then((rows) => rows[0] ?? null);
 }
 
 export interface UpsertEmailConfigData {
@@ -60,7 +60,7 @@ export interface UpsertEmailConfigData {
 }
 
 export async function upsertEmailConfig(
-  db: AppDb,
+  db: PgDb,
   storeId: string,
   data: UpsertEmailConfigData
 ): Promise<EmailConfig> {
@@ -72,7 +72,7 @@ export async function upsertEmailConfig(
     .select({ id: storeEmailConfig.id })
     .from(storeEmailConfig)
     .where(eq(storeEmailConfig.storeId, storeId))
-    .get();
+    .then((rows) => rows[0] ?? null);
 
   if (existing) {
     const row = await db
@@ -87,7 +87,7 @@ export async function upsertEmailConfig(
         createdAt: storeEmailConfig.createdAt,
         updatedAt: storeEmailConfig.updatedAt,
       })
-      .get();
+      .then((rows) => rows[0] ?? null);
     return row;
   }
 

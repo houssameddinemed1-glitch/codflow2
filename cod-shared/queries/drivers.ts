@@ -9,9 +9,9 @@
  * deleteDriver stays in cod-server because it raises ConflictError.
  */
 
-import { eq, and, like, or, count, sql, desc, exists, inArray } from "drizzle-orm";
-import { drivers, driverCompensations, wilayas, orders } from "../db/schema";
-import type { AppDb } from "../db/client";
+import { eq, and, ilike, or, count, sql, desc, exists, inArray } from "drizzle-orm";
+import { drivers, driverCompensations, wilayas, orders } from "../db/schema.pg";
+import type { PgDb } from "../db/client.pg";
 import { safeLikeTerm } from "./search";
 
 export interface DriverFilters {
@@ -42,7 +42,7 @@ export interface UpdateDriverData {
   notes?: string | null;
 }
 
-export async function getAllDrivers(db: AppDb, filters?: DriverFilters) {
+export async function getAllDrivers(db: PgDb, filters?: DriverFilters) {
   const conditions = [];
 
   if (filters?.status) {
@@ -57,9 +57,9 @@ export async function getAllDrivers(db: AppDb, filters?: DriverFilters) {
     const term = `%${safeLikeTerm(filters.search)}%`;
     conditions.push(
       or(
-        like(drivers.firstName, term),
-        like(drivers.lastName, term),
-        like(drivers.phone, term),
+        ilike(drivers.firstName, term),
+        ilike(drivers.lastName, term),
+        ilike(drivers.phone, term),
       ),
     );
   }
@@ -84,8 +84,8 @@ export async function getAllDrivers(db: AppDb, filters?: DriverFilters) {
   const offset = filters?.offset ?? 0;
 
   const driverRows = await (conditions.length > 0
-    ? db.select().from(drivers).where(and(...conditions)).limit(limit).offset(offset).all()
-    : db.select().from(drivers).limit(limit).offset(offset).all());
+    ? db.select().from(drivers).where(and(...conditions)).limit(limit).offset(offset)
+    : db.select().from(drivers).limit(limit).offset(offset));
 
   if (driverRows.length === 0) return [];
 
@@ -94,7 +94,7 @@ export async function getAllDrivers(db: AppDb, filters?: DriverFilters) {
     .from(driverCompensations)
     .where(inArray(driverCompensations.driverId, driverRows.map((d) => d.id)))
     .groupBy(driverCompensations.driverId)
-    .all();
+    ;
 
   const compCountMap = new Map(compRows.map((r) => [r.driverId, r.c]));
 
@@ -110,13 +110,13 @@ export async function getAllDrivers(db: AppDb, filters?: DriverFilters) {
  * drift ≠ 0 means the ledger and reality disagree — damage from an old bug,
  * a manual D1 edit, or a mid-settlement failure. Surfaced so ops can see it.
  */
-export async function getDriverCashReconciliation(db: AppDb, driverId: string) {
+export async function getDriverCashReconciliation(db: PgDb, driverId: string) {
   const [driverRow, pendingRow] = await Promise.all([
     db
       .select({ pendingCash: drivers.pendingCash })
       .from(drivers)
       .where(eq(drivers.id, driverId))
-      .get(),
+      .then((rows) => rows[0] ?? null),
     db
       .select({
         total: sql<number>`coalesce(sum(${orders.codAmount}), 0)`,
@@ -130,7 +130,7 @@ export async function getDriverCashReconciliation(db: AppDb, driverId: string) {
           sql`${orders.codPaymentId} IS NULL`,
         ),
       )
-      .get(),
+      .then((rows) => rows[0] ?? null),
   ]);
 
   const pendingCash = Number(driverRow?.pendingCash ?? 0);
@@ -145,12 +145,12 @@ export async function getDriverCashReconciliation(db: AppDb, driverId: string) {
   };
 }
 
-export async function getDriverById(db: AppDb, driverId: string) {
+export async function getDriverById(db: PgDb, driverId: string) {
   const driver = await db
     .select()
     .from(drivers)
     .where(eq(drivers.id, driverId))
-    .get();
+    .then((rows) => rows[0] ?? null);
 
   if (!driver) return null;
 
@@ -161,7 +161,7 @@ export async function getDriverById(db: AppDb, driverId: string) {
     })
     .from(driverCompensations)
     .where(eq(driverCompensations.driverId, driverId))
-    .get();
+    .then((rows) => rows[0] ?? null);
 
   const [recentOrders, cashReconciliation] = await Promise.all([
     db
@@ -170,7 +170,7 @@ export async function getDriverById(db: AppDb, driverId: string) {
       .where(eq(orders.driverId, driverId))
       .orderBy(desc(orders.updatedAt))
       .limit(10)
-      .all(),
+      ,
     getDriverCashReconciliation(db, driverId),
   ]);
 
@@ -182,13 +182,13 @@ export async function getDriverById(db: AppDb, driverId: string) {
   };
 }
 
-export async function createDriver(db: AppDb, data: CreateDriverData) {
+export async function createDriver(db: PgDb, data: CreateDriverData) {
   // Check for duplicate phone number
   const existingDriver = await db
     .select({ id: drivers.id, phone: drivers.phone })
     .from(drivers)
     .where(eq(drivers.phone, data.phone))
-    .get();
+    .then((rows) => rows[0] ?? null);
 
   if (existingDriver) {
     throw new Error(`Driver with phone "${data.phone}" already exists`);
@@ -217,7 +217,7 @@ export async function createDriver(db: AppDb, data: CreateDriverData) {
   return getDriverById(db, id);
 }
 
-export async function updateDriver(db: AppDb, driverId: string, data: UpdateDriverData) {
+export async function updateDriver(db: PgDb, driverId: string, data: UpdateDriverData) {
   const existing = await getDriverById(db, driverId);
   if (!existing) return null;
 
@@ -227,7 +227,7 @@ export async function updateDriver(db: AppDb, driverId: string, data: UpdateDriv
       .select({ id: drivers.id, phone: drivers.phone })
       .from(drivers)
       .where(eq(drivers.phone, data.phone))
-      .get();
+      .then((rows) => rows[0] ?? null);
 
     if (duplicateDriver) {
       throw new Error(`Driver with phone "${data.phone}" already exists`);
@@ -245,7 +245,7 @@ export async function updateDriver(db: AppDb, driverId: string, data: UpdateDriv
 }
 
 export async function updateDriverStatus(
-  db: AppDb,
+  db: PgDb,
   driverId: string,
   status: "available" | "busy" | "inactive",
 ) {
@@ -275,20 +275,20 @@ export interface DriverCompensationRow {
  * This is the shape the admin grid needs — always 58 rows, sparse overlay.
  */
 export async function getCompensationsForDriver(
-  db: AppDb,
+  db: PgDb,
   driverId: string,
 ): Promise<DriverCompensationRow[]> {
   const allWilayas = await db
     .select({ id: wilayas.id, name: wilayas.name, nameAr: wilayas.nameAr })
     .from(wilayas)
     .orderBy(wilayas.id)
-    .all();
+    ;
 
   const rows = await db
     .select()
     .from(driverCompensations)
     .where(eq(driverCompensations.driverId, driverId))
-    .all();
+    ;
 
   const feeMap = new Map(rows.map((r) => [r.wilayaId, r.feePerDelivery]));
 
@@ -301,7 +301,7 @@ export async function getCompensationsForDriver(
 }
 
 export async function setCompensation(
-  db: AppDb,
+  db: PgDb,
   driverId: string,
   wilayaId: number,
   feePerDelivery: number,
@@ -317,7 +317,7 @@ export async function setCompensation(
         eq(driverCompensations.wilayaId, wilayaId),
       ),
     )
-    .get();
+    .then((rows) => rows[0] ?? null);
 
   if (existing) {
     await db
@@ -344,11 +344,11 @@ export async function setCompensation(
         eq(driverCompensations.wilayaId, wilayaId),
       ),
     )
-    .get();
+    .then((rows) => rows[0] ?? null);
 }
 
 export async function deleteCompensation(
-  db: AppDb,
+  db: PgDb,
   driverId: string,
   wilayaId: number,
 ): Promise<boolean> {
@@ -361,7 +361,7 @@ export async function deleteCompensation(
         eq(driverCompensations.wilayaId, wilayaId),
       ),
     )
-    .get();
+    .then((rows) => rows[0] ?? null);
 
   if (!existing) return false;
 

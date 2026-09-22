@@ -4,7 +4,7 @@
  * Centralized database operations for orders management.
  */
 
-import type { AppDb } from "../db/client";
+import type { PgDb } from "../db/client.pg";
 import {
   orders,
   orderProducts,
@@ -21,13 +21,13 @@ import {
   companyShipments,
   companyApiLogs,
   webhookEvents,
-} from "../db/schema";
-import type { OrderStatus } from "../db/schema";
+} from "../db/schema.pg";
+import type { OrderStatus } from "../db/schema.pg";
 import {
   eq,
   desc,
   and,
-  like,
+  ilike,
   or,
   sql,
   getTableColumns,
@@ -82,7 +82,7 @@ export function parseOrderCursor(
  * Get all orders with optional filtering.
  * Joins wilayas + communes to return Arabic display names.
  */
-export async function getAllOrders(db: AppDb, filters: OrderFilters = {}) {
+export async function getAllOrders(db: PgDb, filters: OrderFilters = {}) {
   const conditions = [];
 
   if (filters.status && filters.status !== "all") {
@@ -105,9 +105,9 @@ export async function getAllOrders(db: AppDb, filters: OrderFilters = {}) {
     const term = `%${safeLikeTerm(filters.search)}%`;
     conditions.push(
       or(
-        like(orders.orderNumber, term),
-        like(orders.customerName, term),
-        like(orders.phone, term),
+        ilike(orders.orderNumber, term),
+        ilike(orders.customerName, term),
+        ilike(orders.phone, term),
       ),
     );
   }
@@ -144,10 +144,10 @@ export async function getAllOrders(db: AppDb, filters: OrderFilters = {}) {
     .orderBy(desc(orders.createdAt), desc(orders.id))
     .limit(filters.limit ?? 50)
     .offset(offset)
-    .all();
+    ;
 }
 
-export async function getOrderById(db: AppDb, orderId: string) {
+export async function getOrderById(db: PgDb, orderId: string) {
   const order = await db
     .select({
       ...getTableColumns(orders),
@@ -164,11 +164,11 @@ export async function getOrderById(db: AppDb, orderId: string) {
     .leftJoin(driversAlias, eq(orders.driverId, driversAlias.id))
     .leftJoin(companyShipments, eq(companyShipments.orderId, orders.id))
     .where(eq(orders.id, orderId))
-    .get();
+    .then((rows) => rows[0] ?? null);
 
   if (!order) return null;
 
-  const [orderProductsList, historyRows] = await db.batch([
+  const [orderProductsList, historyRows] = await Promise.all([
     db.select().from(orderProducts).where(eq(orderProducts.orderId, orderId)),
     db
       .select({
@@ -200,61 +200,59 @@ export async function getOrderById(db: AppDb, orderId: string) {
 }
 
 export async function createOrder(
-  db: AppDb,
+  db: PgDb,
   orderData: typeof orders.$inferInsert,
   productsData: Array<typeof orderProducts.$inferInsert>,
   actor?: { id: string; name: string } | null,
 ) {
   const now = orderData.createdAt ?? new Date().toISOString();
 
-  const statements: BatchStatement[] = [
-    db.insert(orders).values(orderData),
-  ];
+  // Atomic: order row, lines, history, customer stats, stock deduction, and
+  // ledger commit together or not at all. Guarded deductions make the
+  // transaction fail (and roll back entirely) when stock is insufficient —
+  // no silent floor-at-zero, no lost-update races.
+  await db.transaction(async (tx) => {
+    await tx.insert(orders).values(orderData);
 
-  if (productsData.length > 0) {
-    statements.push(db.insert(orderProducts).values(productsData));
-  }
+    if (productsData.length > 0) {
+      await tx.insert(orderProducts).values(productsData);
+    }
 
-  statements.push(
-    db.insert(orderStatusHistory).values({
+    await tx.insert(orderStatusHistory).values({
       id: crypto.randomUUID(),
       orderId: orderData.id!,
       status: orderData.status!,
       timestamp: orderData.createdAt!,
       by: null,
-    }),
-  );
+    });
 
-  statements.push(
-    db
+    await tx
       .update(customers)
       .set({
         totalOrders: sql`${customers.totalOrders} + 1`,
         totalSpent: sql`${customers.totalSpent} + ${orderData.price ?? 0}`,
         lastOrderAt: orderData.createdAt,
       })
-      .where(eq(customers.id, orderData.customerId)),
-  );
+      .where(eq(customers.id, orderData.customerId));
 
-  for (const item of productsData) {
-    const qty = item.quantity as number;
+    for (const item of productsData) {
+      const qty = item.quantity as number;
 
-    const productRow = await db
-      .select({ trackInventory: products.trackInventory })
-      .from(products)
-      .where(eq(products.id, item.productId))
-      .get();
+      const productRow = await tx
+        .select({ trackInventory: products.trackInventory })
+        .from(products)
+        .where(eq(products.id, item.productId))
+        .then((rows) => rows[0] ?? null);
 
-    if (!productRow?.trackInventory) continue;
+      if (!productRow?.trackInventory) continue;
 
-    // Guarded deduction, same pattern as the storefront path: the movement's
-    // qtyBefore/qtyAfter are subselects guarded by inventory >= qty. When
-    // stock is insufficient (or a concurrent writer already took it), the
-    // subselects return NULL, the movement insert violates NOT NULL, and the
-    // ENTIRE batch rolls back — no oversell floor, no lost-update race.
-    if (item.variantId) {
-      statements.push(
-        db.insert(stockMovements).values({
+      // Guarded deduction, same pattern as the storefront path: the movement's
+      // qtyBefore/qtyAfter are subselects guarded by inventory >= qty. When
+      // stock is insufficient (or a concurrent writer already took it), the
+      // subselects return NULL, the movement insert violates NOT NULL, and the
+      // ENTIRE transaction rolls back — no oversell floor, no lost-update race.
+      if (item.variantId) {
+        await tx.insert(stockMovements).values({
           id: crypto.randomUUID(),
           productId: item.productId,
           variantId: item.variantId,
@@ -267,10 +265,8 @@ export async function createOrder(
           createdBy: actor?.id ?? "system",
           createdByName: actor?.name ?? "النظام",
           createdAt: now,
-        }),
-      );
-      statements.push(
-        db
+        });
+        await tx
           .update(productVariants)
           .set({
             inventory: sql`${productVariants.inventory} - ${qty}`,
@@ -281,11 +277,9 @@ export async function createOrder(
               eq(productVariants.id, item.variantId),
               sql`${productVariants.inventory} >= ${qty}`,
             ),
-          ),
-      );
-    } else {
-      statements.push(
-        db.insert(stockMovements).values({
+          );
+      } else {
+        await tx.insert(stockMovements).values({
           id: crypto.randomUUID(),
           productId: item.productId,
           variantId: null,
@@ -298,10 +292,8 @@ export async function createOrder(
           createdBy: actor?.id ?? "system",
           createdByName: actor?.name ?? "النظام",
           createdAt: now,
-        }),
-      );
-      statements.push(
-        db
+        });
+        await tx
           .update(products)
           .set({
             inventory: sql`${products.inventory} - ${qty}`,
@@ -312,22 +304,16 @@ export async function createOrder(
               eq(products.id, item.productId),
               sql`${products.inventory} >= ${qty}`,
             ),
-          ),
-      );
+          );
+      }
     }
-  }
-
-  // Atomic: order row, lines, history, customer stats, stock deduction, and
-  // ledger commit together or not at all. Guarded deductions make the batch
-  // fail (and roll back entirely) when stock is insufficient — no silent
-  // floor-at-zero, no lost-update races.
-  await db.batch(statements as [BatchStatement, ...BatchStatement[]]);
+  });
 
   return orderData.id;
 }
 
 export async function updateOrderStatus(
-  db: AppDb,
+  db: PgDb,
   orderId: string,
   newStatus: OrderStatus,
   userId?: string,
@@ -335,30 +321,33 @@ export async function updateOrderStatus(
 ) {
   const now = new Date().toISOString();
 
-  const order = await db.select().from(orders).where(eq(orders.id, orderId)).get();
+  const order = await db.select().from(orders).where(eq(orders.id, orderId)).then((rows) => rows[0] ?? null);
 
-  const statements: BatchStatement[] = [
-    db
+  // Atomic: status, history, driver credit, customer stats, restock, and line
+  // returns commit together or not at all. Without the transaction, a
+  // mid-sequence failure committed "cancelled" without the restock — and the
+  // wasAlreadyTerminal guard then blocked every retry, permanently losing
+  // the inventory.
+  await db.transaction(async (tx) => {
+    await tx
       .update(orders)
       .set({
         status: newStatus,
         updatedAt: now,
         ...(newStatus === "delivered" ? { deliveryTime: now } : {}),
       })
-      .where(eq(orders.id, orderId)),
+      .where(eq(orders.id, orderId));
 
-    db.insert(orderStatusHistory).values({
+    await tx.insert(orderStatusHistory).values({
       id: crypto.randomUUID(),
       orderId,
       status: newStatus,
       timestamp: now,
       by: userId ?? null,
-    }),
-  ];
+    });
 
-  if (newStatus === "delivered" && order?.driverId) {
-    statements.push(
-      db
+    if (newStatus === "delivered" && order?.driverId) {
+      await tx
         .update(drivers)
         .set({
           totalDelivered: sql`${drivers.totalDelivered} + 1`,
@@ -366,70 +355,64 @@ export async function updateOrderStatus(
           pendingCash: sql`${drivers.pendingCash} + ${order.codAmount ?? 0}`,
           updatedAt: now,
         })
-        .where(eq(drivers.id, order.driverId)),
-    );
-  }
+        .where(eq(drivers.id, order.driverId));
+    }
 
-  const terminalStatuses = ["cancelled", "returned"];
-  const wasAlreadyTerminal = order ? terminalStatuses.includes(order.status) : false;
+    const terminalStatuses = ["cancelled", "returned"];
+    const wasAlreadyTerminal = order ? terminalStatuses.includes(order.status) : false;
 
-  if (!wasAlreadyTerminal && (newStatus === "cancelled" || newStatus === "returned")) {
-    // Update customer totalSpent when order is cancelled/returned
-    statements.push(
-      db
+    if (!wasAlreadyTerminal && (newStatus === "cancelled" || newStatus === "returned")) {
+      // Update customer totalSpent when order is cancelled/returned
+      await tx
         .update(customers)
         .set({
-          totalSpent: sql`MAX(0, ${customers.totalSpent} - ${order?.price ?? 0})`,
+          totalSpent: sql`GREATEST(0, ${customers.totalSpent} - ${order?.price ?? 0})`,
         })
-        .where(eq(customers.id, order?.customerId ?? "")),
-    );
+        .where(eq(customers.id, order?.customerId ?? ""));
 
-    const movementType =
-      newStatus === "cancelled" ? "ORDER_CANCELLED" : "ORDER_RETURNED";
+      const movementType =
+        newStatus === "cancelled" ? "ORDER_CANCELLED" : "ORDER_RETURNED";
 
-    const ordProductRows = await db
-      .select({
-        id: orderProducts.id,
-        productId: orderProducts.productId,
-        variantId: orderProducts.variantId,
-        quantity: orderProducts.quantity,
-        returnedQuantity: orderProducts.returnedQuantity,
-      })
-      .from(orderProducts)
-      .where(eq(orderProducts.orderId, orderId))
-      .all();
+      const ordProductRows = await tx
+        .select({
+          id: orderProducts.id,
+          productId: orderProducts.productId,
+          variantId: orderProducts.variantId,
+          quantity: orderProducts.quantity,
+          returnedQuantity: orderProducts.returnedQuantity,
+        })
+        .from(orderProducts)
+        .where(eq(orderProducts.orderId, orderId))
+        ;
 
-    for (const op of ordProductRows) {
-      const remaining = op.quantity - (op.returnedQuantity ?? 0);
-      if (remaining <= 0) continue;
+      for (const op of ordProductRows) {
+        const remaining = op.quantity - (op.returnedQuantity ?? 0);
+        if (remaining <= 0) continue;
 
-      const productRow = await db
-        .select({ trackInventory: products.trackInventory })
-        .from(products)
-        .where(eq(products.id, op.productId))
-        .get();
+        const productRow = await tx
+          .select({ trackInventory: products.trackInventory })
+          .from(products)
+          .where(eq(products.id, op.productId))
+          .then((rows) => rows[0] ?? null);
 
-      if (!productRow?.trackInventory) continue;
+        if (!productRow?.trackInventory) continue;
 
-      if (op.variantId) {
-        const variantRow = await db
-          .select({ inventory: productVariants.inventory })
-          .from(productVariants)
-          .where(eq(productVariants.id, op.variantId))
-          .get();
+        if (op.variantId) {
+          const variantRow = await tx
+            .select({ inventory: productVariants.inventory })
+            .from(productVariants)
+            .where(eq(productVariants.id, op.variantId))
+            .then((rows) => rows[0] ?? null);
 
-        const qtyBefore = variantRow?.inventory ?? 0;
-        const qtyAfter = qtyBefore + remaining;
+          const qtyBefore = variantRow?.inventory ?? 0;
+          const qtyAfter = qtyBefore + remaining;
 
-        statements.push(
-          db
+          await tx
             .update(productVariants)
             .set({ inventory: qtyAfter, updatedAt: now })
-            .where(eq(productVariants.id, op.variantId)),
-        );
+            .where(eq(productVariants.id, op.variantId));
 
-        statements.push(
-          db.insert(stockMovements).values({
+          await tx.insert(stockMovements).values({
             id: crypto.randomUUID(),
             productId: op.productId,
             variantId: op.variantId,
@@ -442,27 +425,23 @@ export async function updateOrderStatus(
             createdBy: userId ?? "system",
             createdByName: userName ?? "النظام",
             createdAt: now,
-          }),
-        );
-      } else {
-        const productInventoryRow = await db
-          .select({ inventory: products.inventory })
-          .from(products)
-          .where(eq(products.id, op.productId))
-          .get();
+          });
+        } else {
+          const productInventoryRow = await tx
+            .select({ inventory: products.inventory })
+            .from(products)
+            .where(eq(products.id, op.productId))
+            .then((rows) => rows[0] ?? null);
 
-        const qtyBefore = productInventoryRow?.inventory ?? 0;
-        const qtyAfter = qtyBefore + remaining;
+          const qtyBefore = productInventoryRow?.inventory ?? 0;
+          const qtyAfter = qtyBefore + remaining;
 
-        statements.push(
-          db
+          await tx
             .update(products)
             .set({ inventory: qtyAfter, updatedAt: now })
-            .where(eq(products.id, op.productId)),
-        );
+            .where(eq(products.id, op.productId));
 
-        statements.push(
-          db.insert(stockMovements).values({
+          await tx.insert(stockMovements).values({
             id: crypto.randomUUID(),
             productId: op.productId,
             variantId: null,
@@ -475,31 +454,22 @@ export async function updateOrderStatus(
             createdBy: userId ?? "system",
             createdByName: userName ?? "النظام",
             createdAt: now,
-          }),
-        );
-      }
+          });
+        }
 
-      statements.push(
-        db
+        await tx
           .update(orderProducts)
           .set({ status: "returned", returnedQuantity: op.quantity })
-          .where(eq(orderProducts.id, op.id)),
-      );
+          .where(eq(orderProducts.id, op.id));
+      }
     }
-  }
-
-  // Atomic: status, history, driver credit, customer stats, restock, and line
-  // returns commit together or not at all. Without the batch, a mid-sequence
-  // failure committed "cancelled" without the restock — and the
-  // wasAlreadyTerminal guard then blocked every retry, permanently losing
-  // the inventory.
-  await db.batch(statements as [BatchStatement, ...BatchStatement[]]);
+  });
 
   return true;
 }
 
 export async function setOrderProductReturn(
-  db: AppDb,
+  db: PgDb,
   orderId: string,
   productLineId: string,
   newReturnedQty: number,
@@ -517,7 +487,7 @@ export async function setOrderProductReturn(
     .select()
     .from(orderProducts)
     .where(and(eq(orderProducts.id, productLineId), eq(orderProducts.orderId, orderId)))
-    .get();
+    .then((rows) => rows[0] ?? null);
 
   if (!line) {
     throw new Error(`Order line ${productLineId} not found on order ${orderId}`);
@@ -537,7 +507,7 @@ export async function setOrderProductReturn(
       .select({ trackInventory: products.trackInventory })
       .from(products)
       .where(eq(products.id, line.productId))
-      .get();
+      .then((rows) => rows[0] ?? null);
 
     if (productRow?.trackInventory) {
       if (line.variantId) {
@@ -545,7 +515,7 @@ export async function setOrderProductReturn(
           .select({ inventory: productVariants.inventory })
           .from(productVariants)
           .where(eq(productVariants.id, line.variantId))
-          .get();
+          .then((rows) => rows[0] ?? null);
 
         const qtyBefore = variantRow?.inventory ?? 0;
         const qtyAfter = Math.max(0, qtyBefore + delta);
@@ -579,7 +549,7 @@ export async function setOrderProductReturn(
           .select({ inventory: products.inventory })
           .from(products)
           .where(eq(products.id, line.productId))
-          .get();
+          .then((rows) => rows[0] ?? null);
 
         const qtyBefore = productInventoryRow?.inventory ?? 0;
         const qtyAfter = Math.max(0, qtyBefore + delta);
@@ -632,14 +602,14 @@ export async function setOrderProductReturn(
   };
 }
 
-export async function assignDriver(db: AppDb, orderId: string, driverId: string) {
+export async function assignDriver(db: PgDb, orderId: string, driverId: string) {
   const now = new Date().toISOString();
 
   const order = await db
     .select({ wilayaId: orders.wilayaId, status: orders.status })
     .from(orders)
     .where(eq(orders.id, orderId))
-    .get();
+    .then((rows) => rows[0] ?? null);
 
   let driverFee = 0;
   if (order?.wilayaId) {
@@ -652,7 +622,7 @@ export async function assignDriver(db: AppDb, orderId: string, driverId: string)
           eq(driverCompensations.wilayaId, order.wilayaId),
         ),
       )
-      .get();
+      .then((rows) => rows[0] ?? null);
 
     if (comp) {
       driverFee = comp.feePerDelivery;
@@ -676,14 +646,14 @@ export async function assignDriver(db: AppDb, orderId: string, driverId: string)
   return true;
 }
 
-export async function unassignDriver(db: AppDb, orderId: string) {
+export async function unassignDriver(db: PgDb, orderId: string) {
   const now = new Date().toISOString();
 
   const order = await db
     .select({ status: orders.status })
     .from(orders)
     .where(eq(orders.id, orderId))
-    .get();
+    .then((rows) => rows[0] ?? null);
 
   const shouldRollbackStatus = order?.status === "assigned";
 
@@ -701,7 +671,7 @@ export async function unassignDriver(db: AppDb, orderId: string) {
   return true;
 }
 
-export async function assignCompany(db: AppDb, orderId: string, companyId: string) {
+export async function assignCompany(db: PgDb, orderId: string, companyId: string) {
   await db
     .update(orders)
     .set({
@@ -713,7 +683,7 @@ export async function assignCompany(db: AppDb, orderId: string, companyId: strin
 }
 
 export async function syncOrderAfterCarrierUpdate(
-  db: AppDb,
+  db: PgDb,
   orderId: string,
   fields: { customerName?: string; phone?: string; price?: number },
 ) {
@@ -732,7 +702,7 @@ export async function syncOrderAfterCarrierUpdate(
 }
 
 export async function updateOrderTracking(
-  db: AppDb,
+  db: PgDb,
   orderId: string,
   trackingNumber: string,
   trackingUrl?: string,
@@ -751,7 +721,7 @@ export async function updateOrderTracking(
     .where(eq(orders.id, orderId));
 }
 
-export async function clearOrderTracking(db: AppDb, orderId: string) {
+export async function clearOrderTracking(db: PgDb, orderId: string) {
   await db
     .update(orders)
     .set({
@@ -762,20 +732,24 @@ export async function clearOrderTracking(db: AppDb, orderId: string) {
     .where(eq(orders.id, orderId));
 }
 
-export async function deleteOrder(db: AppDb, orderId: string) {
+export async function deleteOrder(db: PgDb, orderId: string) {
   const now = new Date().toISOString();
 
   // Get order details first to update customer stats
-  const order = await db.select().from(orders).where(eq(orders.id, orderId)).get();
+  const order = await db.select().from(orders).where(eq(orders.id, orderId)).then((rows) => rows[0] ?? null);
 
   // Get order products to restore inventory
   const orderProductsList = await db
     .select()
     .from(orderProducts)
     .where(eq(orderProducts.orderId, orderId))
-    .all();
+    ;
 
-  const statements: BatchStatement[] = [];
+  // Atomic: stats, restock, and deletes commit together or not at all.
+  // Without the transaction, a mid-sequence failure left a gutted order behind
+  // (lines deleted, stats decremented, inventory restocked) while the
+  // order row itself survived.
+  await db.transaction(async (tx) => {
 
   // Update customer stats BEFORE deleting the order.
   // totalOrders always drops (the order no longer exists). totalSpent is only
@@ -786,19 +760,17 @@ export async function deleteOrder(db: AppDb, orderId: string) {
     const spendAlreadyRolledBack =
       order.status === "cancelled" || order.status === "returned";
 
-    statements.push(
-      db
-        .update(customers)
-        .set({
-          totalOrders: sql`MAX(0, ${customers.totalOrders} - 1)`,
-          ...(spendAlreadyRolledBack
-            ? {}
-            : {
-                totalSpent: sql`MAX(0, ${customers.totalSpent} - ${order.price ?? 0})`,
-              }),
-        })
-        .where(eq(customers.id, order.customerId)),
-    );
+    await tx
+      .update(customers)
+      .set({
+        totalOrders: sql`GREATEST(0, ${customers.totalOrders} - 1)`,
+        ...(spendAlreadyRolledBack
+          ? {}
+          : {
+              totalSpent: sql`GREATEST(0, ${customers.totalSpent} - ${order.price ?? 0})`,
+            }),
+      })
+      .where(eq(customers.id, order.customerId));
   }
 
   // Reverse driver credit for delivered orders whose money has NOT been
@@ -808,17 +780,15 @@ export async function deleteOrder(db: AppDb, orderId: string) {
   // Orders already linked to a payment keep the driver counters alone:
   // the payment row is append-only history and must stay reconciled.
   if (order && order.driverId && order.status === "delivered" && order.codPaymentId === null) {
-    statements.push(
-      db
-        .update(drivers)
-        .set({
-          totalDelivered: sql`MAX(0, ${drivers.totalDelivered} - 1)`,
-          totalEarnings: sql`MAX(0, ${drivers.totalEarnings} - ${order.driverFee ?? 0})`,
-          pendingCash: sql`MAX(0, ${drivers.pendingCash} - ${order.codAmount ?? 0})`,
-          updatedAt: now,
-        })
-        .where(eq(drivers.id, order.driverId)),
-    );
+    await tx
+      .update(drivers)
+      .set({
+        totalDelivered: sql`GREATEST(0, ${drivers.totalDelivered} - 1)`,
+        totalEarnings: sql`GREATEST(0, ${drivers.totalEarnings} - ${order.driverFee ?? 0})`,
+        pendingCash: sql`GREATEST(0, ${drivers.pendingCash} - ${order.codAmount ?? 0})`,
+        updatedAt: now,
+      })
+      .where(eq(drivers.id, order.driverId));
   }
 
   // Restore inventory for products that track inventory
@@ -826,82 +796,74 @@ export async function deleteOrder(db: AppDb, orderId: string) {
     const remaining = op.quantity - (op.returnedQuantity ?? 0);
     if (remaining <= 0) continue; // Already returned, no stock to restore
 
-    const productRow = await db
+    const productRow = await tx
       .select({ trackInventory: products.trackInventory })
       .from(products)
       .where(eq(products.id, op.productId))
-      .get();
+      .then((rows) => rows[0] ?? null);
 
     if (!productRow?.trackInventory) continue; // Product doesn't track inventory
 
     if (op.variantId) {
       // Restore variant inventory
-      const variantRow = await db
+      const variantRow = await tx
         .select({ inventory: productVariants.inventory })
         .from(productVariants)
         .where(eq(productVariants.id, op.variantId))
-        .get();
+        .then((rows) => rows[0] ?? null);
 
       const qtyBefore = variantRow?.inventory ?? 0;
       const qtyAfter = qtyBefore + remaining;
 
-      statements.push(
-        db
-          .update(productVariants)
-          .set({ inventory: qtyAfter, updatedAt: now })
-          .where(eq(productVariants.id, op.variantId)),
-      );
+      await tx
+        .update(productVariants)
+        .set({ inventory: qtyAfter, updatedAt: now })
+        .where(eq(productVariants.id, op.variantId));
 
-      statements.push(
-        db.insert(stockMovements).values({
-          id: crypto.randomUUID(),
-          productId: op.productId,
-          variantId: op.variantId,
-          type: "ORDER_CANCELLED",
-          delta: remaining,
-          qtyBefore,
-          qtyAfter,
-          reason: "Order deleted - inventory restored",
-          reference: orderId,
-          createdBy: "system",
-          createdByName: "النظام",
-          createdAt: now,
-        }),
-      );
+      await tx.insert(stockMovements).values({
+        id: crypto.randomUUID(),
+        productId: op.productId,
+        variantId: op.variantId,
+        type: "ORDER_CANCELLED",
+        delta: remaining,
+        qtyBefore,
+        qtyAfter,
+        reason: "Order deleted - inventory restored",
+        reference: orderId,
+        createdBy: "system",
+        createdByName: "النظام",
+        createdAt: now,
+      });
     } else {
       // Restore product inventory
-      const productInventoryRow = await db
+      const productInventoryRow = await tx
         .select({ inventory: products.inventory })
         .from(products)
         .where(eq(products.id, op.productId))
-        .get();
+        .then((rows) => rows[0] ?? null);
 
       const qtyBefore = productInventoryRow?.inventory ?? 0;
       const qtyAfter = qtyBefore + remaining;
 
-      statements.push(
-        db
-          .update(products)
-          .set({ inventory: qtyAfter, updatedAt: now })
-          .where(eq(products.id, op.productId)),
-      );
+      await tx
+        .update(products)
+        .set({ inventory: qtyAfter, updatedAt: now })
+        .where(eq(products.id, op.productId));
 
-      statements.push(
-        db.insert(stockMovements).values({
-          id: crypto.randomUUID(),
-          productId: op.productId,
-          variantId: null,
-          type: "ORDER_CANCELLED",
-          delta: remaining,
-          qtyBefore,
-          qtyAfter,
-          reason: "Order deleted - inventory restored",
-          reference: orderId,
-          createdBy: "system",
-          createdByName: "النظام",
-          createdAt: now,
-        }),
-      );
+      await tx.insert(stockMovements).values({
+        id: crypto.randomUUID(),
+        productId: op.productId,
+        variantId: null,
+        type: "ORDER_CANCELLED",
+        delta: remaining,
+        qtyBefore,
+        qtyAfter,
+        reason: "Order deleted - inventory restored",
+        reference: orderId,
+        createdBy: "system",
+        createdByName: "النظام",
+        createdAt: now,
+      });
     }
   }
 
@@ -909,19 +871,12 @@ export async function deleteOrder(db: AppDb, orderId: string) {
   // orders(id) with ON DELETE no action — they must be removed explicitly or
   // the final orders delete fails the FOREIGN KEY constraint. Reviews and
   // order_status_history cascade at the database level.
-  statements.push(
-    db.delete(companyApiLogs).where(eq(companyApiLogs.orderId, orderId)),
-    db.delete(webhookEvents).where(eq(webhookEvents.orderId, orderId)),
-    db.delete(companyShipments).where(eq(companyShipments.orderId, orderId)),
-    db.delete(orderProducts).where(eq(orderProducts.orderId, orderId)),
-    db.delete(orders).where(eq(orders.id, orderId)),
-  );
-
-  // Atomic: stats, restock, and deletes commit together or not at all.
-  // Without the batch, a mid-sequence failure left a gutted order behind
-  // (lines deleted, stats decremented, inventory restocked) while the
-  // order row itself survived.
-  await db.batch(statements as [BatchStatement, ...BatchStatement[]]);
+  await tx.delete(companyApiLogs).where(eq(companyApiLogs.orderId, orderId));
+  await tx.delete(webhookEvents).where(eq(webhookEvents.orderId, orderId));
+  await tx.delete(companyShipments).where(eq(companyShipments.orderId, orderId));
+  await tx.delete(orderProducts).where(eq(orderProducts.orderId, orderId));
+  await tx.delete(orders).where(eq(orders.id, orderId));
+  });
 }
 
 // ─── Webhook Status Update ────────────────────────────────────────────────────
@@ -959,7 +914,7 @@ interface RestockResolved extends RestockLine {
 }
 
 async function resolveRestockLines(
-  db: AppDb,
+  db: PgDb,
   orderId: string,
 ): Promise<RestockLine[]> {
   const ordProductRows = await db
@@ -972,7 +927,7 @@ async function resolveRestockLines(
     })
     .from(orderProducts)
     .where(eq(orderProducts.orderId, orderId))
-    .all();
+    ;
 
   const lines: RestockLine[] = [];
   for (const op of ordProductRows) {
@@ -983,7 +938,7 @@ async function resolveRestockLines(
       .select({ trackInventory: products.trackInventory })
       .from(products)
       .where(eq(products.id, op.productId))
-      .get();
+      .then((rows) => rows[0] ?? null);
 
     if (!productRow?.trackInventory) continue;
 
@@ -998,7 +953,7 @@ async function resolveRestockLines(
 }
 
 async function readCurrentInventories(
-  db: AppDb,
+  db: PgDb,
   lines: RestockLine[],
 ): Promise<RestockResolved[]> {
   const resolved: RestockResolved[] = [];
@@ -1007,80 +962,21 @@ async function readCurrentInventories(
       .select({ inventory: line.variantId ? productVariants.inventory : products.inventory })
       .from(line.variantId ? productVariants : products)
       .where(eq(line.variantId ? productVariants.id : products.id, line.variantId ?? line.productId))
-      .get();
+      .then((rows) => rows[0] ?? null);
     resolved.push({ ...line, qtyBefore: row?.inventory ?? 0 });
   }
   return resolved;
 }
 
-type BatchStatement = Parameters<AppDb["batch"]>[0][number];
-
-function buildRestockStatements(
-  db: AppDb,
-  resolved: RestockResolved[],
-  movementType: "ORDER_CANCELLED" | "ORDER_RETURNED",
-  orderId: string,
-  source: string,
-  now: string,
-): BatchStatement[] {
-  const built: BatchStatement[] = [];
-
-  for (const line of resolved) {
-    const qtyAfter = line.qtyBefore + line.remaining;
-
-    if (line.variantId) {
-      built.push(
-        db
-          .update(productVariants)
-          .set({ inventory: sql`${productVariants.inventory} + ${line.remaining}`, updatedAt: now })
-          .where(eq(productVariants.id, line.variantId)),
-      );
-    } else {
-      built.push(
-        db
-          .update(products)
-          .set({ inventory: sql`${products.inventory} + ${line.remaining}`, updatedAt: now })
-          .where(eq(products.id, line.productId)),
-      );
-    }
-
-    built.push(
-      db.insert(stockMovements).values({
-        id: crypto.randomUUID(),
-        productId: line.productId,
-        variantId: line.variantId,
-        type: movementType,
-        delta: line.remaining,
-        qtyBefore: line.qtyBefore,
-        qtyAfter,
-        reason: null,
-        reference: orderId,
-        createdBy: source,
-        createdByName: source,
-        createdAt: now,
-      }),
-    );
-
-    built.push(
-      db
-        .update(orderProducts)
-        .set({ status: "returned", returnedQuantity: sql`${orderProducts.quantity}` })
-        .where(eq(orderProducts.id, line.lineId)),
-    );
-  }
-
-  return built;
-}
-
 export async function updateOrderStatusWebhook(
-  db: AppDb,
+  db: PgDb,
   orderId: string,
   newStatus: OrderStatus,
   source: string,
 ): Promise<{ updated: boolean }> {
   const now = new Date().toISOString();
 
-  const order = await db.select().from(orders).where(eq(orders.id, orderId)).get();
+  const order = await db.select().from(orders).where(eq(orders.id, orderId)).then((rows) => rows[0] ?? null);
 
   if (!order) return { updated: false };
 
@@ -1099,20 +995,24 @@ export async function updateOrderStatusWebhook(
     updateFields.deliveryTime = now;
   }
 
-  const statements: BatchStatement[] = [
-    db.update(orders).set(updateFields).where(eq(orders.id, orderId)),
-    db.insert(orderStatusHistory).values({
+  const movementType =
+    newStatus === "cancelled" ? "ORDER_CANCELLED" : "ORDER_RETURNED";
+  const needsRestock = newStatus === "cancelled" || newStatus === "returned";
+  const lines = needsRestock ? await resolveRestockLines(db, orderId) : [];
+  const resolved = needsRestock ? await readCurrentInventories(db, lines) : [];
+
+  await db.transaction(async (tx) => {
+    await tx.update(orders).set(updateFields).where(eq(orders.id, orderId));
+    await tx.insert(orderStatusHistory).values({
       id: crypto.randomUUID(),
       orderId,
       status: newStatus,
       timestamp: now,
       by: source,
-    }),
-  ];
+    });
 
-  if (newStatus === "delivered" && order.driverId) {
-    statements.push(
-      db
+    if (newStatus === "delivered" && order.driverId) {
+      await tx
         .update(drivers)
         .set({
           totalDelivered: sql`${drivers.totalDelivered} + 1`,
@@ -1120,35 +1020,60 @@ export async function updateOrderStatusWebhook(
           pendingCash: sql`${drivers.pendingCash} + ${order.codAmount ?? 0}`,
           updatedAt: now,
         })
-        .where(eq(drivers.id, order.driverId)),
-    );
-  }
+        .where(eq(drivers.id, order.driverId));
+    }
 
-  if (newStatus === "cancelled" || newStatus === "returned") {
-    statements.push(
-      db
+    if (needsRestock) {
+      await tx
         .update(customers)
         .set({
-          totalSpent: sql`MAX(0, ${customers.totalSpent} - ${order.price ?? 0})`,
+          totalSpent: sql`GREATEST(0, ${customers.totalSpent} - ${order.price ?? 0})`,
         })
-        .where(eq(customers.id, order.customerId)),
-    );
+        .where(eq(customers.id, order.customerId));
 
-    const movementType =
-      newStatus === "cancelled" ? "ORDER_CANCELLED" : "ORDER_RETURNED";
+      for (const line of resolved) {
+        const qtyAfter = line.qtyBefore + line.remaining;
 
-    const lines = await resolveRestockLines(db, orderId);
-    const resolved = await readCurrentInventories(db, lines);
-    statements.push(...buildRestockStatements(db, resolved, movementType, orderId, source, now));
-  }
+        if (line.variantId) {
+          await tx
+            .update(productVariants)
+            .set({ inventory: sql`${productVariants.inventory} + ${line.remaining}`, updatedAt: now })
+            .where(eq(productVariants.id, line.variantId));
+        } else {
+          await tx
+            .update(products)
+            .set({ inventory: sql`${products.inventory} + ${line.remaining}`, updatedAt: now })
+            .where(eq(products.id, line.productId));
+        }
 
-  await db.batch(statements as [BatchStatement, ...BatchStatement[]]);
+        await tx.insert(stockMovements).values({
+          id: crypto.randomUUID(),
+          productId: line.productId,
+          variantId: line.variantId,
+          type: movementType,
+          delta: line.remaining,
+          qtyBefore: line.qtyBefore,
+          qtyAfter,
+          reason: null,
+          reference: orderId,
+          createdBy: source,
+          createdByName: source,
+          createdAt: now,
+        });
+
+        await tx
+          .update(orderProducts)
+          .set({ status: "returned", returnedQuantity: sql`${orderProducts.quantity}` })
+          .where(eq(orderProducts.id, line.lineId));
+      }
+    }
+  });
 
   return { updated: true };
 }
 
 export async function updateOrderInternalNote(
-  db: AppDb,
+  db: PgDb,
   orderId: string,
   internalNote: string | null,
 ) {
@@ -1162,7 +1087,7 @@ export async function updateOrderInternalNote(
 }
 
 export async function incrementDeliveryAttempts(
-  db: AppDb,
+  db: PgDb,
   orderId: string,
 ): Promise<void> {
   await db

@@ -1,6 +1,6 @@
-import { eq, and, like, sql } from "drizzle-orm";
-import { customerGroups, customerGroupMembers, customers } from "../db/schema";
-import type { AppDb } from "../db/client";
+import { eq, and, ilike, sql } from "drizzle-orm";
+import { customerGroups, customerGroupMembers, customers } from "../db/schema.pg";
+import type { PgDb } from "../db/client.pg";
 
 export interface CustomerGroupFilters {
   search?: string;
@@ -20,10 +20,10 @@ export interface UpdateCustomerGroupData {
   color?: string;
 }
 
-export async function getAllGroups(db: AppDb, filters?: CustomerGroupFilters) {
+export async function getAllGroups(db: PgDb, filters?: CustomerGroupFilters) {
   const conditions = [];
   if (filters?.search) {
-    conditions.push(like(customerGroups.name, `%${filters.search}%`));
+    conditions.push(ilike(customerGroups.name, `%${filters.search}%`));
   }
 
   const limit = filters?.limit ?? 50;
@@ -36,20 +36,20 @@ export async function getAllGroups(db: AppDb, filters?: CustomerGroupFilters) {
       .where(and(...conditions))
       .limit(limit)
       .offset(offset)
-      .all();
+      ;
   }
-  return await db.select().from(customerGroups).limit(limit).offset(offset).all();
+  return await db.select().from(customerGroups).limit(limit).offset(offset);
 }
 
-export async function getGroupById(db: AppDb, groupId: string) {
+export async function getGroupById(db: PgDb, groupId: string) {
   return await db
     .select()
     .from(customerGroups)
     .where(eq(customerGroups.id, groupId))
-    .get();
+    .then((rows) => rows[0] ?? null);
 }
 
-export async function getGroupWithMembers(db: AppDb, groupId: string) {
+export async function getGroupWithMembers(db: PgDb, groupId: string) {
   const group = await getGroupById(db, groupId);
   if (!group) return null;
 
@@ -66,12 +66,12 @@ export async function getGroupWithMembers(db: AppDb, groupId: string) {
     .from(customerGroupMembers)
     .innerJoin(customers, eq(customerGroupMembers.customerId, customers.id))
     .where(eq(customerGroupMembers.groupId, groupId))
-    .all();
+    ;
 
   return { ...group, members };
 }
 
-export async function createGroup(db: AppDb, data: CreateCustomerGroupData) {
+export async function createGroup(db: PgDb, data: CreateCustomerGroupData) {
   const now = new Date().toISOString();
   const groupId = crypto.randomUUID();
 
@@ -89,7 +89,7 @@ export async function createGroup(db: AppDb, data: CreateCustomerGroupData) {
 }
 
 export async function updateGroup(
-  db: AppDb,
+  db: PgDb,
   groupId: string,
   data: UpdateCustomerGroupData,
 ) {
@@ -103,11 +103,11 @@ export async function updateGroup(
   return getGroupById(db, groupId);
 }
 
-export async function deleteGroup(db: AppDb, groupId: string) {
+export async function deleteGroup(db: PgDb, groupId: string) {
   await db.delete(customerGroups).where(eq(customerGroups.id, groupId));
 }
 
-export async function addMember(db: AppDb, groupId: string, customerId: string) {
+export async function addMember(db: PgDb, groupId: string, customerId: string) {
   const now = new Date().toISOString();
 
   await db
@@ -119,7 +119,7 @@ export async function addMember(db: AppDb, groupId: string, customerId: string) 
     .select({ count: sql<number>`count(*)` })
     .from(customerGroupMembers)
     .where(eq(customerGroupMembers.groupId, groupId))
-    .get();
+    .then((rows) => rows[0] ?? null);
 
   await db
     .update(customerGroups)
@@ -127,7 +127,7 @@ export async function addMember(db: AppDb, groupId: string, customerId: string) 
     .where(eq(customerGroups.id, groupId));
 }
 
-export async function removeMember(db: AppDb, groupId: string, customerId: string) {
+export async function removeMember(db: PgDb, groupId: string, customerId: string) {
   await db
     .delete(customerGroupMembers)
     .where(
@@ -142,7 +142,7 @@ export async function removeMember(db: AppDb, groupId: string, customerId: strin
     .select({ count: sql<number>`count(*)` })
     .from(customerGroupMembers)
     .where(eq(customerGroupMembers.groupId, groupId))
-    .get();
+    .then((rows) => rows[0] ?? null);
 
   await db
     .update(customerGroups)

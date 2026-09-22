@@ -13,8 +13,8 @@ import {
   orders,
   products,
   stores,
-} from "../db/schema";
-import type { AppDb } from "../db/client";
+} from "../db/schema.pg";
+import type { PgDb } from "../db/client.pg";
 
 export interface LandingPageStats {
   views: number;
@@ -87,7 +87,7 @@ export interface LandingPageListPagination {
 }
 
 async function resolveListRow(
-  db: AppDb,
+  db: PgDb,
   filters: { productId?: string; status?: "draft" | "published" | "archived" } = {},
   pagination: LandingPageListPagination = {},
 ): Promise<LandingPageListItem[]> {
@@ -125,7 +125,7 @@ async function resolveListRow(
   let query = baseQuery.$dynamic();
   if (pagination.limit !== undefined) query = query.limit(pagination.limit);
   if (pagination.offset !== undefined) query = query.offset(pagination.offset);
-  const rows = await query.all();
+  const rows = await query;
 
   return rows.map((row) => ({
     ...row,
@@ -137,14 +137,14 @@ async function resolveListRow(
 }
 
 export async function listLandingPages(
-  db: AppDb,
+  db: PgDb,
   filters: { productId?: string; status?: "draft" | "published" | "archived" } = {},
   pagination: LandingPageListPagination = {},
 ) {
   return resolveListRow(db, filters, pagination);
 }
 
-export async function getLandingPageStats(db: AppDb, id: string): Promise<LandingPageStats | null> {
+export async function getLandingPageStats(db: PgDb, id: string): Promise<LandingPageStats | null> {
   const row = await db
     .select({
       views: landingPages.views,
@@ -152,7 +152,7 @@ export async function getLandingPageStats(db: AppDb, id: string): Promise<Landin
     })
     .from(landingPages)
     .where(eq(landingPages.id, id))
-    .get();
+    .then((rows) => rows[0] ?? null);
   if (!row) return null;
   return {
     views: Number(row.views),
@@ -173,15 +173,15 @@ export function generateLandingPageSlug(): string {
  *      call to D1 instead of three parallel-but-separate queries. Used by
  *      every REST detail read and every MCP write tool's post-mutation read.
  */
-export async function getLandingPageById(db: AppDb, id: string) {
+export async function getLandingPageById(db: PgDb, id: string) {
   const row = await db
     .select()
     .from(landingPages)
     .where(eq(landingPages.id, id))
-    .get();
+    .then((rows) => rows[0] ?? null);
   if (!row) return null;
 
-  const results = await db.batch([
+  const results = await Promise.all([
     db
       .select()
       .from(landingPageImages)
@@ -198,7 +198,7 @@ export async function getLandingPageById(db: AppDb, id: string) {
       .select({ id: products.id, name: products.name, handle: products.handle, price: products.price })
       .from(products)
       .where(eq(products.id, row.productId)),
-  ] as [BatchStatement, ...BatchStatement[]]);
+  ]);
 
   const images = (results[0] as unknown as typeof landingPageImages.$inferSelect[]) ?? [];
   const statsRow = ((results[1] as unknown as Array<Record<string, unknown>>) ?? [])[0];
@@ -220,7 +220,7 @@ export async function getLandingPageById(db: AppDb, id: string) {
   };
 }
 
-type BatchStatement = Parameters<AppDb["batch"]>[0][number];
+type BatchStatement = Parameters<PgDb["batch"]>[0][number];
 
 /**
  * Full LP detail by slug in TWO round trips (the public render path):
@@ -229,15 +229,15 @@ type BatchStatement = Parameters<AppDb["batch"]>[0][number];
  *      call to D1 (batched statements), instead of re-selecting the row by
  *      id and issuing four more queries.
  */
-export async function getLandingPageDetailBySlug(db: AppDb, slug: string) {
+export async function getLandingPageDetailBySlug(db: PgDb, slug: string) {
   const row = await db
     .select()
     .from(landingPages)
     .where(eq(landingPages.slug, slug))
-    .get();
+    .then((rows) => rows[0] ?? null);
   if (!row) return null;
 
-  const results = await db.batch([
+  const results = await Promise.all([
     db
       .select()
       .from(landingPageImages)
@@ -254,7 +254,7 @@ export async function getLandingPageDetailBySlug(db: AppDb, slug: string) {
       .select({ id: products.id, name: products.name, handle: products.handle, price: products.price })
       .from(products)
       .where(eq(products.id, row.productId)),
-  ] as [BatchStatement, ...BatchStatement[]]);
+  ]);
 
   const images = (results[0] as unknown as typeof landingPageImages.$inferSelect[]) ?? [];
   const statsRow = ((results[1] as unknown as Array<Record<string, unknown>>) ?? [])[0];
@@ -276,18 +276,18 @@ export async function getLandingPageDetailBySlug(db: AppDb, slug: string) {
   };
 }
 
-export async function getLandingPageBySlug(db: AppDb, slug: string) {
+export async function getLandingPageBySlug(db: PgDb, slug: string) {
   const row = await db
     .select()
     .from(landingPages)
     .where(eq(landingPages.slug, slug))
-    .get();
+    .then((rows) => rows[0] ?? null);
   if (!row) return null;
   return getLandingPageById(db, row.id);
 }
 
 export async function createLandingPage(
-  db: AppDb,
+  db: PgDb,
   data: CreateLandingPageData,
 ): Promise<{ id: string; slug: string }> {
   const id = crypto.randomUUID();
@@ -312,7 +312,7 @@ export async function createLandingPage(
 }
 
 export async function updateLandingPage(
-  db: AppDb,
+  db: PgDb,
   id: string,
   data: UpdateLandingPageData,
 ) {
@@ -330,7 +330,7 @@ export async function updateLandingPage(
     .where(eq(landingPages.id, id));
 }
 
-export async function publishLandingPage(db: AppDb, id: string) {
+export async function publishLandingPage(db: PgDb, id: string) {
   const now = new Date().toISOString();
   await db
     .update(landingPages)
@@ -338,7 +338,7 @@ export async function publishLandingPage(db: AppDb, id: string) {
     .where(eq(landingPages.id, id));
 }
 
-export async function unpublishLandingPage(db: AppDb, id: string) {
+export async function unpublishLandingPage(db: PgDb, id: string) {
   const now = new Date().toISOString();
   await db
     .update(landingPages)
@@ -346,7 +346,7 @@ export async function unpublishLandingPage(db: AppDb, id: string) {
     .where(eq(landingPages.id, id));
 }
 
-export async function archiveLandingPage(db: AppDb, id: string) {
+export async function archiveLandingPage(db: PgDb, id: string) {
   const now = new Date().toISOString();
   await db
     .update(landingPages)
@@ -355,22 +355,22 @@ export async function archiveLandingPage(db: AppDb, id: string) {
 }
 
 /** Count orders attributed to a landing page — powers the delete guard. */
-export async function countLandingPageOrders(db: AppDb, id: string): Promise<number> {
+export async function countLandingPageOrders(db: PgDb, id: string): Promise<number> {
   const row = await db
     .select({ c: count() })
     .from(orders)
     .where(eq(orders.landingPageId, id))
-    .get();
+    .then((rows) => rows[0] ?? null);
   return Number(row?.c ?? 0);
 }
 
-export async function deleteLandingPage(db: AppDb, id: string) {
+export async function deleteLandingPage(db: PgDb, id: string) {
   // Images cascade at the DB level; orders must be absent (guarded by the caller).
   await db.delete(landingPages).where(eq(landingPages.id, id));
 }
 
 export async function addLandingPageImage(
-  db: AppDb,
+  db: PgDb,
   landingPageId: string,
   image: LandingPageImageInput,
 ) {
@@ -381,7 +381,7 @@ export async function addLandingPageImage(
     .select({ maxPos: sql<number>`MAX(${landingPageImages.position})` })
     .from(landingPageImages)
     .where(eq(landingPageImages.landingPageId, landingPageId))
-    .get();
+    .then((rows) => rows[0] ?? null);
   const nextPosition = image.position ?? Number(lastRow?.maxPos ?? 0) + 1;
 
   await db.insert(landingPageImages).values({
@@ -400,17 +400,17 @@ export async function addLandingPageImage(
   return getLandingPageImages(db, landingPageId);
 }
 
-export async function getLandingPageImages(db: AppDb, landingPageId: string) {
+export async function getLandingPageImages(db: PgDb, landingPageId: string) {
   return db
     .select()
     .from(landingPageImages)
     .where(eq(landingPageImages.landingPageId, landingPageId))
     .orderBy(landingPageImages.position)
-    .all();
+    ;
 }
 
 export async function getLandingPageImage(
-  db: AppDb,
+  db: PgDb,
   landingPageId: string,
   imageId: string,
 ) {
@@ -423,41 +423,40 @@ export async function getLandingPageImage(
         eq(landingPageImages.landingPageId, landingPageId),
       ),
     )
-    .get();
+    .then((rows) => rows[0] ?? null);
 }
 
 export async function reorderLandingPageImages(
-  db: AppDb,
+  db: PgDb,
   landingPageId: string,
   imageIds: string[],
 ) {
   const now = new Date().toISOString();
-  // One atomic batch: every position update + the parent touch in a SINGLE
-  // round trip — the per-image await loop was N+1 sequential D1 calls.
-  const statements: BatchStatement[] = imageIds.map((imageId, index) =>
-    db
-      .update(landingPageImages)
-      .set({ position: index + 1 })
-      .where(
-        and(
-          eq(landingPageImages.id, imageId),
-          eq(landingPageImages.landingPageId, landingPageId),
-        ),
-      ),
-  );
-  // Touch the parent's updatedAt so the studio knows the stack changed.
-  statements.push(
-    db
+  // One atomic transaction: every position update + the parent touch commit
+  // together — the per-image await loop was N+1 sequential D1 calls.
+  await db.transaction(async (tx) => {
+    for (const [index, imageId] of imageIds.entries()) {
+      await tx
+        .update(landingPageImages)
+        .set({ position: index + 1 })
+        .where(
+          and(
+            eq(landingPageImages.id, imageId),
+            eq(landingPageImages.landingPageId, landingPageId),
+          ),
+        );
+    }
+    // Touch the parent's updatedAt so the studio knows the stack changed.
+    await tx
       .update(landingPages)
       .set({ updatedAt: now })
-      .where(eq(landingPages.id, landingPageId)),
-  );
-  await db.batch(statements as [BatchStatement, ...BatchStatement[]]);
+      .where(eq(landingPages.id, landingPageId));
+  });
   return getLandingPageImages(db, landingPageId);
 }
 
 export async function deleteLandingPageImage(
-  db: AppDb,
+  db: PgDb,
   landingPageId: string,
   imageId: string,
 ) {
@@ -473,19 +472,19 @@ export async function deleteLandingPageImage(
 
 /** Landing pages that still exist and are published — the attribution-resolvable set. */
 export async function findPublishedLandingPageIdBySlug(
-  db: AppDb,
+  db: PgDb,
   slug: string,
 ): Promise<string | null> {
   const row = await db
     .select({ id: landingPages.id })
     .from(landingPages)
     .where(and(eq(landingPages.slug, slug), eq(landingPages.status, "published")))
-    .get();
+    .then((rows) => rows[0] ?? null);
   return row?.id ?? null;
 }
 
 /** Comparison view source: every LP of one product with its stats, newest first. */
-export async function compareLandingPages(db: AppDb, productId: string) {
+export async function compareLandingPages(db: PgDb, productId: string) {
   return resolveListRow(db, { productId });
 }
 
@@ -498,12 +497,12 @@ export async function compareLandingPages(db: AppDb, productId: string) {
  * Attribution, views, and published state are NEVER copied — a duplicate is
  * a fresh creative test, not a stats clone.
  */
-export async function duplicateLandingPage(db: AppDb, id: string): Promise<string | null> {
+export async function duplicateLandingPage(db: PgDb, id: string): Promise<string | null> {
   const source = await db
     .select()
     .from(landingPages)
     .where(eq(landingPages.id, id))
-    .get();
+    .then((rows) => rows[0] ?? null);
   if (!source) return null;
 
   const images = await db
@@ -511,14 +510,14 @@ export async function duplicateLandingPage(db: AppDb, id: string): Promise<strin
     .from(landingPageImages)
     .where(eq(landingPageImages.landingPageId, id))
     .orderBy(landingPageImages.position)
-    .all();
+    ;
 
   const newId = crypto.randomUUID();
   const now = new Date().toISOString();
   const slug = generateLandingPageSlug();
 
-  const statements: BatchStatement[] = [
-    db.insert(landingPages).values({
+  await db.transaction(async (tx) => {
+    await tx.insert(landingPages).values({
       id: newId,
       slug,
       name: `${source.name} (copy)`,
@@ -530,11 +529,9 @@ export async function duplicateLandingPage(db: AppDb, id: string): Promise<strin
       views: 0,
       createdAt: now,
       updatedAt: now,
-    }),
-  ];
-  for (const image of images) {
-    statements.push(
-      db.insert(landingPageImages).values({
+    });
+    for (const image of images) {
+      await tx.insert(landingPageImages).values({
         id: crypto.randomUUID(),
         landingPageId: newId,
         r2Key: image.r2Key,
@@ -545,10 +542,9 @@ export async function duplicateLandingPage(db: AppDb, id: string): Promise<strin
         width: image.width,
         height: image.height,
         createdAt: now,
-      }),
-    );
-  }
-  await db.batch(statements as [BatchStatement, ...BatchStatement[]]);
+      });
+    }
+  });
 
   return newId;
 }
@@ -559,7 +555,7 @@ export async function duplicateLandingPage(db: AppDb, id: string): Promise<strin
  * same immutable R2 object).
  */
 export async function countOtherLandingPageImageReferences(
-  db: AppDb,
+  db: PgDb,
   r2Key: string,
   excludeImageId: string,
 ): Promise<number> {
@@ -567,16 +563,16 @@ export async function countOtherLandingPageImageReferences(
     .select({ c: count() })
     .from(landingPageImages)
     .where(and(eq(landingPageImages.r2Key, r2Key), sql`${landingPageImages.id} <> ${excludeImageId}`))
-    .get();
+    .then((rows) => rows[0] ?? null);
   return Number(row?.c ?? 0);
 }
 
-export async function slugExists(db: AppDb, slug: string): Promise<boolean> {
+export async function slugExists(db: PgDb, slug: string): Promise<boolean> {
   const row = await db
     .select({ id: landingPages.id })
     .from(landingPages)
     .where(eq(landingPages.slug, slug))
-    .get();
+    .then((rows) => rows[0] ?? null);
   return row !== undefined;
 }
 
@@ -584,7 +580,7 @@ export async function slugExists(db: AppDb, slug: string): Promise<boolean> {
  * Atomic view increment — one UPDATE per render, no read-modify-write race.
  * Called by the public store endpoint for published pages only.
  */
-export async function incrementLandingPageViews(db: AppDb, id: string): Promise<void> {
+export async function incrementLandingPageViews(db: PgDb, id: string): Promise<void> {
   await db
     .update(landingPages)
     .set({ views: sql`${landingPages.views} + 1` })
@@ -604,14 +600,14 @@ export async function incrementLandingPageViews(db: AppDb, id: string): Promise<
  * https is always assumed; the domain is stored as a bare hostname.
  */
 export async function resolveStorefrontBaseUrl(
-  db: AppDb,
+  db: PgDb,
   fallbackUrl?: string,
 ): Promise<string | null> {
   const store = await db
     .select({ domain: stores.domain })
     .from(stores)
     .limit(1)
-    .get();
+    .then((rows) => rows[0] ?? null);
   if (store?.domain) return `https://${store.domain}`;
   const fallback = (fallbackUrl ?? "").replace(/\/+$/, "");
   return fallback || null;

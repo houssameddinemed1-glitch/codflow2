@@ -6,9 +6,9 @@
  * cod-server so they can invoke the scope cache.
  */
 
-import { eq, and, like, or } from "drizzle-orm";
-import { users, userScopes } from "../db/schema";
-import type { AppDb } from "../db/client";
+import { eq, and, ilike, or } from "drizzle-orm";
+import { users, userScopes } from "../db/schema.pg";
+import type { PgDb } from "../db/client.pg";
 
 export interface UserFilters {
   role?: "admin" | "staff";
@@ -27,7 +27,7 @@ function sanitize<T extends { apiKey: string | null }>(user: T): Omit<T, "apiKey
   return safe as Omit<T, "apiKey">;
 }
 
-export async function getAllUsers(db: AppDb, filters?: UserFilters) {
+export async function getAllUsers(db: PgDb, filters?: UserFilters) {
   const conditions = [];
 
   if (filters?.role) {
@@ -41,8 +41,8 @@ export async function getAllUsers(db: AppDb, filters?: UserFilters) {
   if (filters?.search) {
     conditions.push(
       or(
-        like(users.name, `%${filters.search}%`),
-        like(users.email, `%${filters.search}%`),
+        ilike(users.name, `%${filters.search}%`),
+        ilike(users.email, `%${filters.search}%`),
       ),
     );
   }
@@ -58,14 +58,14 @@ export async function getAllUsers(db: AppDb, filters?: UserFilters) {
       .where(and(...conditions))
       .limit(limit)
       .offset(offset)
-      .all();
+      ;
   } else {
     allUsers = await db
       .select()
       .from(users)
       .limit(limit)
       .offset(offset)
-      .all();
+      ;
   }
 
   const usersWithScopes = await Promise.all(
@@ -89,12 +89,12 @@ export async function getAllUsers(db: AppDb, filters?: UserFilters) {
   return usersWithScopes;
 }
 
-export async function getUserById(db: AppDb, userId: string) {
+export async function getUserById(db: PgDb, userId: string) {
   const user = await db
     .select()
     .from(users)
     .where(eq(users.id, userId))
-    .get();
+    .then((rows) => rows[0] ?? null);
 
   if (!user) {
     return null;
@@ -120,7 +120,7 @@ export async function getUserById(db: AppDb, userId: string) {
  * Returns the new raw key — store it securely, it will not be retrievable again.
  */
 export async function rotateApiKey(
-  db: AppDb,
+  db: PgDb,
   userId: string,
 ): Promise<{ apiKey: string }> {
   const apiKey = `cod_${crypto.randomUUID().replace(/-/g, "")}`;

@@ -1,6 +1,6 @@
 import { eq, desc } from "drizzle-orm";
-import { offers, products, productVariants } from "../db/schema";
-import type { AppDb } from "../db/client";
+import { offers, products, productVariants } from "../db/schema.pg";
+import type { PgDb } from "../db/client.pg";
 
 export type OfferDiscountType = "free" | "free_shipping";
 export type OfferStatus = "active" | "inactive";
@@ -34,7 +34,7 @@ export interface UpdateOfferData {
 }
 
 async function resolveOfferDetail(
-  db: AppDb,
+  db: PgDb,
   offer: typeof offers.$inferSelect,
 ) {
   const [triggerProduct, rewardProduct] = await Promise.all([
@@ -42,13 +42,13 @@ async function resolveOfferDetail(
       .select({ id: products.id, name: products.name, handle: products.handle })
       .from(products)
       .where(eq(products.id, offer.triggerProductId))
-      .get(),
+      .then((rows) => rows[0] ?? null),
     offer.rewardProductId
       ? db
           .select({ id: products.id, name: products.name, handle: products.handle })
           .from(products)
           .where(eq(products.id, offer.rewardProductId))
-          .get()
+          .then((rows) => rows[0] ?? null)
       : Promise.resolve(null),
   ]);
 
@@ -58,14 +58,14 @@ async function resolveOfferDetail(
           .select({ id: productVariants.id, variations: productVariants.variations })
           .from(productVariants)
           .where(eq(productVariants.id, offer.triggerVariantId))
-          .get()
+          .then((rows) => rows[0] ?? null)
       : Promise.resolve(null),
     offer.rewardVariantId
       ? db
           .select({ id: productVariants.id, variations: productVariants.variations })
           .from(productVariants)
           .where(eq(productVariants.id, offer.rewardVariantId))
-          .get()
+          .then((rows) => rows[0] ?? null)
       : Promise.resolve(null),
   ]);
 
@@ -101,29 +101,29 @@ async function resolveOfferDetail(
   };
 }
 
-export async function listOffers(db: AppDb) {
+export async function listOffers(db: PgDb) {
   const rows = await db
     .select()
     .from(offers)
     .orderBy(desc(offers.createdAt))
-    .all();
+    ;
 
   return Promise.all(rows.map((row) => resolveOfferDetail(db, row)));
 }
 
-export async function getOfferById(db: AppDb, id: string) {
+export async function getOfferById(db: PgDb, id: string) {
   const offer = await db
     .select()
     .from(offers)
     .where(eq(offers.id, id))
-    .get();
+    .then((rows) => rows[0] ?? null);
 
   if (!offer) return null;
   return resolveOfferDetail(db, offer);
 }
 
 export async function createOffer(
-  db: AppDb,
+  db: PgDb,
   data: CreateOfferData,
 ): Promise<{ id: string }> {
   const id = crypto.randomUUID();
@@ -150,7 +150,7 @@ export async function createOffer(
 }
 
 export async function updateOffer(
-  db: AppDb,
+  db: PgDb,
   id: string,
   data: UpdateOfferData,
 ) {
@@ -187,6 +187,6 @@ export async function updateOffer(
     .where(eq(offers.id, id));
 }
 
-export async function deleteOffer(db: AppDb, id: string) {
+export async function deleteOffer(db: PgDb, id: string) {
   await db.delete(offers).where(eq(offers.id, id));
 }

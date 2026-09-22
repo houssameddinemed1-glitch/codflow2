@@ -14,8 +14,8 @@
  * stored secret through — the secret never round-trips to any client.
  */
 
-import type { AppDb } from "../db/client";
-import { storeTurnstileConfig } from "../db/schema";
+import type { PgDb } from "../db/client.pg";
+import { storeTurnstileConfig } from "../db/schema.pg";
 import { eq } from "drizzle-orm";
 
 export interface TurnstileConfig {
@@ -28,7 +28,7 @@ export interface TurnstileConfig {
 
 /** Safe projection — no secret key. Truth for "is Turnstile active". */
 export async function getTurnstileConfig(
-  db: AppDb,
+  db: PgDb,
   storeId: string
 ): Promise<TurnstileConfig | undefined> {
   const row = await db
@@ -41,20 +41,20 @@ export async function getTurnstileConfig(
     })
     .from(storeTurnstileConfig)
     .where(eq(storeTurnstileConfig.storeId, storeId))
-    .get();
+    .then((rows) => rows[0] ?? null);
   return row;
 }
 
 /** Full row including the siteverify secret. Server-side callers only. */
 export async function getTurnstileConfigRaw(
-  db: AppDb,
+  db: PgDb,
   storeId: string
 ): Promise<typeof storeTurnstileConfig.$inferSelect | undefined> {
   return db
     .select()
     .from(storeTurnstileConfig)
     .where(eq(storeTurnstileConfig.storeId, storeId))
-    .get();
+    .then((rows) => rows[0] ?? null);
 }
 
 export interface UpsertTurnstileConfigData {
@@ -65,7 +65,7 @@ export interface UpsertTurnstileConfigData {
 }
 
 export async function upsertTurnstileConfig(
-  db: AppDb,
+  db: PgDb,
   storeId: string,
   data: UpsertTurnstileConfigData
 ): Promise<TurnstileConfig> {
@@ -76,7 +76,7 @@ export async function upsertTurnstileConfig(
     .select({ id: storeTurnstileConfig.id })
     .from(storeTurnstileConfig)
     .where(eq(storeTurnstileConfig.storeId, storeId))
-    .get();
+    .then((rows) => rows[0] ?? null);
 
   if (existing) {
     const row = await db
@@ -90,7 +90,7 @@ export async function upsertTurnstileConfig(
         createdAt: storeTurnstileConfig.createdAt,
         updatedAt: storeTurnstileConfig.updatedAt,
       })
-      .get();
+      .then((rows) => rows[0] ?? null);
     return row;
   }
 

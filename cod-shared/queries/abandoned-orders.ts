@@ -2,9 +2,9 @@
  * Abandoned Orders Queries
  */
 
-import { eq, and, desc, lt, sql, like, or } from "drizzle-orm";
-import { abandonedOrders, wilayas, communes } from "../db/schema";
-import type { AppDb } from "../db/client";
+import { eq, and, desc, lt, sql, ilike, or } from "drizzle-orm";
+import { abandonedOrders, wilayas, communes } from "../db/schema.pg";
+import type { PgDb } from "../db/client.pg";
 import { safeLikeTerm } from "./search";
 
 export interface UpsertAbandonedOrderData {
@@ -35,7 +35,7 @@ export interface AbandonedOrderFilters {
 }
 
 export async function upsertAbandonedOrder(
-  db: AppDb,
+  db: PgDb,
   data: UpsertAbandonedOrderData
 ): Promise<string> {
   const now = new Date().toISOString();
@@ -101,7 +101,7 @@ export async function upsertAbandonedOrder(
 }
 
 export async function markAbandonedOrderConverted(
-  db: AppDb,
+  db: PgDb,
   sessionId: string,
   orderId: string,
   orderNumber: string
@@ -125,7 +125,7 @@ export async function markAbandonedOrderConverted(
 }
 
 /** Cron: flip pending → abandoned for records older than 30 minutes. Returns count. */
-export async function sweepPendingToAbandoned(db: AppDb): Promise<number> {
+export async function sweepPendingToAbandoned(db: PgDb): Promise<number> {
   const now = new Date().toISOString();
   const cutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
 
@@ -144,7 +144,7 @@ export async function sweepPendingToAbandoned(db: AppDb): Promise<number> {
 }
 
 export async function listAbandonedOrders(
-  db: AppDb,
+  db: PgDb,
   filters: AbandonedOrderFilters = {}
 ) {
   const { status, search, limit = 50, offset = 0 } = filters;
@@ -158,15 +158,15 @@ export async function listAbandonedOrders(
     const term = `%${safeLikeTerm(search)}%`;
     conditions.push(
       or(
-        like(abandonedOrders.customerName, term),
-        like(abandonedOrders.phone, term)
+        ilike(abandonedOrders.customerName, term),
+        ilike(abandonedOrders.phone, term)
       )
     );
   }
 
   const where = conditions.length > 0 ? and(...conditions) : undefined;
 
-  const [rows, countRows] = await db.batch([
+  const [rows, countRows] = await Promise.all([
     db
       .select()
       .from(abandonedOrders)
@@ -180,8 +180,8 @@ export async function listAbandonedOrders(
   return { rows, total: countRows[0]?.count ?? 0 };
 }
 
-export async function getAbandonedOrderStats(db: AppDb) {
-  const [totalRows, convertedRows, revenueRows] = await db.batch([
+export async function getAbandonedOrderStats(db: PgDb) {
+  const [totalRows, convertedRows, revenueRows] = await Promise.all([
     db
       .select({ count: sql<number>`count(*)` })
       .from(abandonedOrders)
@@ -207,7 +207,7 @@ export async function getAbandonedOrderStats(db: AppDb) {
 }
 
 export async function updateAbandonedOrderStatus(
-  db: AppDb,
+  db: PgDb,
   id: string,
   status: (typeof abandonedOrders.$inferSelect)["status"]
 ): Promise<void> {
@@ -218,6 +218,6 @@ export async function updateAbandonedOrderStatus(
     .where(eq(abandonedOrders.id, id));
 }
 
-export async function deleteAbandonedOrder(db: AppDb, id: string): Promise<void> {
+export async function deleteAbandonedOrder(db: PgDb, id: string): Promise<void> {
   await db.delete(abandonedOrders).where(eq(abandonedOrders.id, id));
 }

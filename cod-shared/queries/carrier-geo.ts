@@ -10,8 +10,8 @@
  * that as "no map, current behavior").
  */
 import { eq, sql } from "drizzle-orm";
-import { carrierWilayas, carrierCommunes, wilayas, communes } from "../db/schema";
-import type { AppDb } from "../db/client";
+import { carrierWilayas, carrierCommunes, wilayas, communes } from "../db/schema.pg";
+import type { PgDb } from "../db/client.pg";
 
 export interface CarrierGeoSyncResult {
   wilayasMatched: number;
@@ -71,7 +71,7 @@ function isNearVariant(a: string, b: string): boolean {
 
 /** Resolve one wilaya → the carrier's exact string (null = no map row). */
 export async function resolveCarrierWilayaName(
-  db: AppDb,
+  db: PgDb,
   carrierCode: string,
   wilayaId: number,
 ): Promise<string | null> {
@@ -81,13 +81,13 @@ export async function resolveCarrierWilayaName(
     .where(
       sql`${carrierWilayas.carrierCode} = ${carrierCode} AND ${carrierWilayas.wilayaId} = ${wilayaId}`,
     )
-    .get();
+    .then((rows) => rows[0] ?? null);
   return row?.carrierName ?? null;
 }
 
 /** Resolve one commune → the carrier's exact string (null = no map row). */
 export async function resolveCarrierCommuneName(
-  db: AppDb,
+  db: PgDb,
   carrierCode: string,
   communeId: string,
 ): Promise<string | null> {
@@ -97,11 +97,11 @@ export async function resolveCarrierCommuneName(
     .where(
       sql`${carrierCommunes.carrierCode} = ${carrierCode} AND ${carrierCommunes.communeId} = ${communeId}`,
     )
-    .get();
+    .then((rows) => rows[0] ?? null);
   return row?.carrierName ?? null;
 }
 
-type BatchStatement = Parameters<AppDb["batch"]>[0][number];
+type BatchStatement = Parameters<PgDb["batch"]>[0][number];
 
 /**
  * Full geo sync for one carrier: exact-match, then normalized, then
@@ -120,7 +120,7 @@ type BatchStatement = Parameters<AppDb["batch"]>[0][number];
  *   wilayas: [{ id, name }], communes: [{ id, name, wilayaId }]
  */
 export async function syncCarrierGeoNames(
-  db: AppDb,
+  db: PgDb,
   carrierCode: string,
   carrierNames: {
     wilayas: Array<{ id: number; name: string }>;
@@ -130,11 +130,11 @@ export async function syncCarrierGeoNames(
   const ourWilayas = await db
     .select({ id: wilayas.id, name: wilayas.name })
     .from(wilayas)
-    .all();
+    ;
   const ourCommunes = await db
     .select({ id: communes.id, name: communes.name, wilayaId: communes.wilayaId })
     .from(communes)
-    .all();
+    ;
 
   // Wilayas: exact key, then normalized key.
   const yalWilayaExact = new Map(carrierNames.wilayas.map((w) => [w.name, w.id]));
@@ -177,8 +177,8 @@ export async function syncCarrierGeoNames(
     return null;
   };
 
-  const wilayaStatements: BatchStatement[] = [];
-  const communeStatements: BatchStatement[] = [];
+  const wilayaValues: Array<{ carrierCode: string; wilayaId: number; carrierName: string }> = [];
+  const communeValues: Array<{ carrierCode: string; communeId: string; carrierName: string }> = [];
   const result: CarrierGeoSyncResult = {
     wilayasMatched: 0,
     wilayasUnmapped: 0,
@@ -198,15 +198,7 @@ export async function syncCarrierGeoNames(
       continue;
     }
     const carrierName = carrierWilayaNameById.get(carrierId)!;
-    wilayaStatements.push(
-      db
-        .insert(carrierWilayas)
-        .values({ carrierCode, wilayaId: w.id, carrierName })
-        .onConflictDoUpdate({
-          target: [carrierWilayas.carrierCode, carrierWilayas.wilayaId],
-          set: { carrierName: sql`excluded.carrier_name` },
-        }),
-    );
+    wilayaValues.push({ carrierCode, wilayaId: w.id, carrierName });
     result.wilayasMatched++;
   }
 
@@ -218,45 +210,50 @@ export async function syncCarrierGeoNames(
       continue;
     }
     const carrierName = carrierCommuneNameById.get(hit.id) ?? hit.name;
-    communeStatements.push(
-      db
-        .insert(carrierCommunes)
-        .values({ carrierCode, communeId: c.id, carrierName })
-        .onConflictDoUpdate({
-          target: [carrierCommunes.carrierCode, carrierCommunes.communeId],
-          set: { carrierName: sql`excluded.carrier_name` },
-        }),
-    );
+    communeValues.push({ carrierCode, communeId: c.id, carrierName });
     result.communesMatched++;
   }
 
   // Replace the carrier's previous map wholesale, then insert the fresh one.
-  const wipe: BatchStatement[] = [
-    db.delete(carrierWilayas).where(eq(carrierWilayas.carrierCode, carrierCode)),
-    db.delete(carrierCommunes).where(eq(carrierCommunes.carrierCode, carrierCode)),
-  ];
-  const statements = [...wipe, ...wilayaStatements, ...communeStatements] as [
-    BatchStatement,
-    ...BatchStatement[],
-  ];
-  await db.batch(statements);
+  await db.transaction(async (tx) => {
+    await tx.delete(carrierWilayas).where(eq(carrierWilayas.carrierCode, carrierCode));
+    await tx.delete(carrierCommunes).where(eq(carrierCommunes.carrierCode, carrierCode));
+    for (const v of wilayaValues) {
+      await tx
+        .insert(carrierWilayas)
+        .values(v)
+        .onConflictDoUpdate({
+          target: [carrierWilayas.carrierCode, carrierWilayas.wilayaId],
+          set: { carrierName: sql`excluded.carrier_name` },
+        });
+    }
+    for (const v of communeValues) {
+      await tx
+        .insert(carrierCommunes)
+        .values(v)
+        .onConflictDoUpdate({
+          target: [carrierCommunes.carrierCode, carrierCommunes.communeId],
+          set: { carrierName: sql`excluded.carrier_name` },
+        });
+    }
+  });
 
   return result;
 }
 
 /** Count of mapped communes for a carrier — powers dashboard sync status. */
-export async function countCarrierCommuneMappings(db: AppDb, carrierCode: string): Promise<number> {
+export async function countCarrierCommuneMappings(db: PgDb, carrierCode: string): Promise<number> {
   const rows = await db
     .select({ id: carrierCommunes.communeId })
     .from(carrierCommunes)
     .where(eq(carrierCommunes.carrierCode, carrierCode))
-    .all();
+    ;
   return rows.length;
 }
 
 /** Bulk resolve commune IDs → carrier names for one carrier (dispatch batch path). */
 export async function resolveCarrierCommuneNames(
-  db: AppDb,
+  db: PgDb,
   carrierCode: string,
   communeIds: string[],
 ): Promise<Map<string, string>> {
@@ -271,7 +268,7 @@ export async function resolveCarrierCommuneNames(
         sql`, `,
       )})`,
     )
-    .all();
+    ;
   for (const row of rows) map.set(row.communeId, row.carrierName);
   return map;
 }

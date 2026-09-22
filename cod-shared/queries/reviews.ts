@@ -1,6 +1,6 @@
 import { eq, and, desc, sql } from "drizzle-orm";
-import { reviews, products } from "../db/schema";
-import type { AppDb } from "../db/client";
+import { reviews, products } from "../db/schema.pg";
+import type { PgDb } from "../db/client.pg";
 
 export type ReviewStatus = "pending" | "approved" | "rejected";
 
@@ -11,7 +11,7 @@ export interface ReviewFilters {
   offset: number;
 }
 
-export async function getAllReviews(db: AppDb, filters: ReviewFilters) {
+export async function getAllReviews(db: PgDb, filters: ReviewFilters) {
   const conditions: any[] = [];
 
   if (filters.status) conditions.push(eq(reviews.status, filters.status));
@@ -19,7 +19,7 @@ export async function getAllReviews(db: AppDb, filters: ReviewFilters) {
 
   const where = conditions.length > 0 ? and(...conditions) : undefined;
 
-  const [rows, totalRows, pendingRows] = await db.batch([
+  const [rows, totalRows, pendingRows] = await Promise.all([
     db
       .select({
         id: reviews.id,
@@ -57,16 +57,16 @@ export async function getAllReviews(db: AppDb, filters: ReviewFilters) {
   };
 }
 
-export async function getReviewById(db: AppDb, id: string) {
+export async function getReviewById(db: PgDb, id: string) {
   return db
     .select()
     .from(reviews)
     .where(eq(reviews.id, id))
-    .get();
+    .then((rows) => rows[0] ?? null);
 }
 
 export async function updateReviewStatus(
-  db: AppDb,
+  db: PgDb,
   id: string,
   status: ReviewStatus,
 ) {
@@ -75,9 +75,9 @@ export async function updateReviewStatus(
     .update(reviews)
     .set({ status, updatedAt: now })
     .where(eq(reviews.id, id));
-  return db.select().from(reviews).where(eq(reviews.id, id)).get();
+  return db.select().from(reviews).where(eq(reviews.id, id)).then((rows) => rows[0] ?? null);
 }
 
-export async function deleteReview(db: AppDb, id: string) {
+export async function deleteReview(db: PgDb, id: string) {
   await db.delete(reviews).where(eq(reviews.id, id));
 }
