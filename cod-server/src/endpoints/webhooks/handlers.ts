@@ -42,6 +42,7 @@ function isOrderStatus(value: string): value is (typeof ORDER_STATUSES)[number] 
 /** Terminal order statuses — late carrier events never modify these orders. */
 const TERMINAL_ORDER_STATUSES = new Set<OrderStatus>(["delivered", "returned", "cancelled"]);
 import { shouldTriggerCapiPurchase, getCapiWorkflowId } from "@/workflows/capi-helpers";
+import { publishWorkflow } from "@/lib/queue";
 
 // ─── ZR Express ───────────────────────────────────────────────────────────────
 
@@ -206,22 +207,17 @@ export async function handleZrWebhook(c: Context<AppContext>) {
     );
 
       if (updated && shouldTriggerCapiPurchase(newStatus, resolvedOrder.wilayaId)) {
-        if (!c.env.CAPI_WORKFLOW) {
-          console.error("[capi-workflow] CAPI_WORKFLOW binding is undefined — worker needs re-provision");
-        } else {
-          c.executionCtx.waitUntil(
-            c.env.CAPI_WORKFLOW.create({
-              id: getCapiWorkflowId(resolvedOrder.id, "delivered", "Purchase"),
-              params: {
-                orderId: resolvedOrder.id,
-                eventName: "Purchase",
-                stage: "delivered",
-                triggeredAt: Math.floor(Date.now() / 1000),
-                triggerStatus: newStatus,
-              },
-            }).catch((err: unknown) => console.error("[capi-workflow] zr trigger failed:", (err as Error)?.message))
-          );
-        }
+        await publishWorkflow(
+          "capi",
+          {
+            orderId: resolvedOrder.id,
+            eventName: "Purchase",
+            stage: "delivered",
+            triggeredAt: Math.floor(Date.now() / 1000),
+            triggerStatus: newStatus,
+          },
+          getCapiWorkflowId(resolvedOrder.id, "delivered", "Purchase"),
+        );
       }
 
     await updateWebhookEvent(db, webhookEventId, {
@@ -456,22 +452,17 @@ export async function handleYalidineWebhook(c: Context<AppContext>) {
       );
 
       if (updated && shouldTriggerCapiPurchase(nextStatus, order.wilayaId)) {
-        if (!c.env.CAPI_WORKFLOW) {
-          console.error("[capi-workflow] CAPI_WORKFLOW binding is undefined — worker needs re-provision");
-        } else {
-          c.executionCtx.waitUntil(
-            c.env.CAPI_WORKFLOW.create({
-              id: getCapiWorkflowId(order.id, "delivered", "Purchase"),
-              params: {
-                orderId: order.id,
-                eventName: "Purchase",
-                stage: "delivered",
-                triggeredAt: Math.floor(Date.now() / 1000),
-                triggerStatus: nextStatus,
-              },
-            }).catch((err: unknown) => console.error("[capi-workflow] yalidine trigger failed:", (err as Error)?.message))
-          );
-        }
+        await publishWorkflow(
+          "capi",
+          {
+            orderId: order.id,
+            eventName: "Purchase",
+            stage: "delivered",
+            triggeredAt: Math.floor(Date.now() / 1000),
+            triggerStatus: nextStatus,
+          },
+          getCapiWorkflowId(order.id, "delivered", "Purchase"),
+        );
       }
 
       await updateWebhookEvent(db, webhookEventId, {

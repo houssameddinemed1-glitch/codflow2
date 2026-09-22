@@ -11,6 +11,7 @@ import { getPixelConfig } from "../../../../cod-shared/queries/pixel-config";
 import { getTiktokConfig } from "../../../../cod-shared/queries/tiktok-config";
 import { resolveConversionForStage, getCapiWorkflowId } from "@/workflows/capi-helpers";
 import { resolveTiktokForStage, getTiktokWorkflowId } from "@/workflows/tiktok-conversion-model";
+import { publishWorkflow } from "@/lib/queue";
 import { stores } from "../../../../cod-shared/db/schema.pg";
 import { eq } from "drizzle-orm";
 
@@ -222,118 +223,100 @@ export async function createStoreOrder(c: Context<AppContext>) {
   // When mode is "Lead", sends Lead (matching the thank-you Pixel).
   // When mode is "Purchase_Confirmed" or "Purchase_Delivered", skips at checkout
   // and fires down-funnel via server CAPI.
-  if (c.env.CAPI_WORKFLOW) {
-    try {
-      const storeId = c.get("storeId");
-      const pixelConfig =
-        storeId && typeof db.select === "function"
-          ? await getPixelConfig(db, storeId)
-          : undefined;
-      const decision = resolveConversionForStage(pixelConfig?.conversionEvent, "checkout");
+  try {
+    const storeId = c.get("storeId");
+    const pixelConfig =
+      storeId && typeof db.select === "function"
+        ? await getPixelConfig(db, storeId)
+        : undefined;
+    const decision = resolveConversionForStage(pixelConfig?.conversionEvent, "checkout");
 
-      if (decision.shouldFire && decision.eventName) {
-        let storeRow: { domain: string | null } | undefined = undefined;
-        if (storeId && typeof db.select === "function") {
-          storeRow = await db
-            .select({ domain: stores.domain })
-            .from(stores)
-            .where(eq(stores.id, storeId))
-            .then((rows) => rows[0] ?? null);
-        }
-
-        let eventSourceUrl: string | undefined = storeRow?.domain
-          ? `https://${storeRow.domain}/thank-you`
-          : undefined;
-
-        if (!eventSourceUrl) {
-          const referer = c.req.header("Referer");
-          if (referer && (referer.startsWith("http://") || referer.startsWith("https://"))) {
-            eventSourceUrl = referer;
-          }
-        }
-
-        const workflowId = getCapiWorkflowId(order.id, "checkout", decision.eventName);
-
-        c.executionCtx.waitUntil(
-          c.env.CAPI_WORKFLOW.create({
-            id: workflowId,
-            params: {
-              orderId: order.id,
-              eventName: decision.eventName,
-              stage: "checkout",
-              triggeredAt: Math.floor(Date.now() / 1000),
-              triggerStatus: "order_created",
-              eventSourceUrl,
-            },
-          }).catch((err: unknown) =>
-            console.error(`[capi-workflow] checkout ${decision.eventName} trigger failed:`, (err as Error)?.message)
-          )
-        );
+    if (decision.shouldFire && decision.eventName) {
+      let storeRow: { domain: string | null } | undefined = undefined;
+      if (storeId && typeof db.select === "function") {
+        storeRow = await db
+          .select({ domain: stores.domain })
+          .from(stores)
+          .where(eq(stores.id, storeId))
+          .then((rows) => rows[0] ?? null);
       }
-    } catch (err) {
-      console.error("[capi-workflow] checkout evaluation failed:", (err as Error)?.message);
+
+      let eventSourceUrl: string | undefined = storeRow?.domain
+        ? `https://${storeRow.domain}/thank-you`
+        : undefined;
+
+      if (!eventSourceUrl) {
+        const referer = c.req.header("Referer");
+        if (referer && (referer.startsWith("http://") || referer.startsWith("https://"))) {
+          eventSourceUrl = referer;
+        }
+      }
+
+      await publishWorkflow(
+        "capi",
+        {
+          orderId: order.id,
+          eventName: decision.eventName,
+          stage: "checkout",
+          triggeredAt: Math.floor(Date.now() / 1000),
+          triggerStatus: "order_created",
+          eventSourceUrl,
+        },
+        getCapiWorkflowId(order.id, "checkout", decision.eventName),
+      );
     }
-  } else {
-    console.error("[capi-workflow] CAPI_WORKFLOW binding is undefined — worker needs re-provision");
+  } catch (err) {
+    console.error("[capi-workflow] checkout evaluation failed:", (err as Error)?.message);
   }
 
   // TikTok Events API conversion event at checkout — evaluated against the
   // merchant's TikTok tracking mode ONLY (Meta's mode never influences this).
   // Instant "Purchase" → CompletePayment; "Lead" → SubmitForm (both matching
   // the thank-you ttq pixel). "Purchase_Confirmed"/"Purchase_Delivered" skip
-  // at checkout and fire down-funnel via the TikTok workflow.
-  if (c.env.TIKTOK_WORKFLOW) {
-    try {
-      const storeId = c.get("storeId");
-      const tiktokConfig =
-        storeId && typeof db.select === "function"
-          ? await getTiktokConfig(db, storeId)
-          : undefined;
-      const tiktokDecision = resolveTiktokForStage(tiktokConfig?.conversionEvent, "checkout");
+  // at checkout and fire down-funnel via the TikTok event.
+  try {
+    const storeId = c.get("storeId");
+    const tiktokConfig =
+      storeId && typeof db.select === "function"
+        ? await getTiktokConfig(db, storeId)
+        : undefined;
+    const tiktokDecision = resolveTiktokForStage(tiktokConfig?.conversionEvent, "checkout");
 
-      if (tiktokDecision.shouldFire && tiktokDecision.eventName) {
-        let tiktokSourceUrl: string | undefined = undefined;
-        if (storeId && typeof db.select === "function") {
-          const tiktokStoreRow = await db
-            .select({ domain: stores.domain })
-            .from(stores)
-            .where(eq(stores.id, storeId))
-            .then((rows) => rows[0] ?? null);
-          if (tiktokStoreRow?.domain) {
-            tiktokSourceUrl = `https://${tiktokStoreRow.domain}/thank-you`;
-          }
+    if (tiktokDecision.shouldFire && tiktokDecision.eventName) {
+      let tiktokSourceUrl: string | undefined = undefined;
+      if (storeId && typeof db.select === "function") {
+        const tiktokStoreRow = await db
+          .select({ domain: stores.domain })
+          .from(stores)
+          .where(eq(stores.id, storeId))
+          .then((rows) => rows[0] ?? null);
+        if (tiktokStoreRow?.domain) {
+          tiktokSourceUrl = `https://${tiktokStoreRow.domain}/thank-you`;
         }
-
-        if (!tiktokSourceUrl) {
-          const referer = c.req.header("Referer");
-          if (referer && (referer.startsWith("http://") || referer.startsWith("https://"))) {
-            tiktokSourceUrl = referer;
-          }
-        }
-
-        const tiktokWorkflowId = getTiktokWorkflowId(order.id, "checkout", tiktokDecision.eventName);
-
-        c.executionCtx.waitUntil(
-          c.env.TIKTOK_WORKFLOW.create({
-            id: tiktokWorkflowId,
-            params: {
-              orderId: order.id,
-              eventName: tiktokDecision.eventName,
-              stage: "checkout",
-              triggeredAt: Math.floor(Date.now() / 1000),
-              triggerStatus: "order_created",
-              eventSourceUrl: tiktokSourceUrl,
-            },
-          }).catch((err: unknown) =>
-            console.error(`[tiktok-workflow] checkout ${tiktokDecision.eventName} trigger failed:`, (err as Error)?.message)
-          )
-        );
       }
-    } catch (err) {
-      console.error("[tiktok-workflow] checkout evaluation failed:", (err as Error)?.message);
+
+      if (!tiktokSourceUrl) {
+        const referer = c.req.header("Referer");
+        if (referer && (referer.startsWith("http://") || referer.startsWith("https://"))) {
+          tiktokSourceUrl = referer;
+        }
+      }
+
+      await publishWorkflow(
+        "tiktok",
+        {
+          orderId: order.id,
+          eventName: tiktokDecision.eventName,
+          stage: "checkout",
+          triggeredAt: Math.floor(Date.now() / 1000),
+          triggerStatus: "order_created",
+          eventSourceUrl: tiktokSourceUrl,
+        },
+        getTiktokWorkflowId(order.id, "checkout", tiktokDecision.eventName),
+      );
     }
-  } else {
-    console.error("[tiktok-workflow] TIKTOK_WORKFLOW binding is undefined — worker needs re-provision");
+  } catch (err) {
+    console.error("[tiktok-workflow] checkout evaluation failed:", (err as Error)?.message);
   }
 
   return c.json(

@@ -34,6 +34,7 @@
     "@modelcontextprotocol/client": "2.0.0",
     "@modelcontextprotocol/server": "2.0.0",
     "@noble/hashes": "^2.3.0",
+    "@upstash/qstash": "^2.11.3",
     "@upstash/redis": "^1.39.0",
     "@vercel/blob": "^2.8.0",
     "agents": "^0.22.0",
