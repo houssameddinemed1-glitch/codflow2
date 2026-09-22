@@ -1,0 +1,262 @@
+import { Eye, MoreHorizontal, Package, Pencil, Star, Trash2 } from "lucide-react";
+import {
+  Badge,
+  DropdownItem,
+  DropdownLink,
+  DropdownMenu,
+  TableCell,
+  TableRow,
+} from "@/components/ui";
+import { useLocale, useT } from "@/i18n/react";
+import {
+  formatMoneyValue,
+  productStockTone,
+} from "@/features/products/model";
+import type { Product, ProductCategory } from "@/features/products/types";
+
+function ProductStatusBadge({ product }: { product: Product }) {
+  const t = useT("products");
+  if (product.status === "ACTIVE")
+    return <Badge tone="success">{t("status_options.active")}</Badge>;
+  if (product.status === "DRAFT")
+    return <Badge tone="neutral">{t("status_options.draft")}</Badge>;
+  return <Badge tone="critical">{t("status_options.archived")}</Badge>;
+}
+
+function HiddenFromStoreBadge() {
+  const t = useT("products");
+  return <Badge tone="neutral">{t("status.hidden_from_store")}</Badge>;
+}
+
+function StockValue({ product }: { product: Product }) {
+  const t = useT("products");
+  const total = product.totalInventory ?? product.inventory ?? 0;
+  const tone = productStockTone(product);
+  if (tone === "none")
+    return <span className="text-sm text-muted-foreground">∞</span>;
+  if (tone === "out")
+    return <Badge tone="critical">{t("status.out_of_stock")}</Badge>;
+  return <span className="text-sm font-semibold tabular-nums">{total}</span>;
+}
+
+function ReviewValue({ product }: { product: Product }) {
+  const count = product.reviewCount ?? 0;
+  if (count === 0)
+    return <span className="text-sm text-muted-foreground/30">—</span>;
+  return (
+    <span className="inline-flex items-center gap-1">
+      <Star size={13} className="fill-amber-400 text-amber-400" />
+      {product.avgRating != null && (
+        <span className="text-sm font-semibold tabular-nums">
+          {product.avgRating}
+        </span>
+      )}
+      <span className="text-xs text-muted-foreground tabular-nums">
+        ({count})
+      </span>
+    </span>
+  );
+}
+
+interface RowProps {
+  product: Product;
+  categoryMap: Map<string, ProductCategory>;
+  canManage: boolean;
+  onDelete: (product: Product) => void;
+  storeDomain?: string | null;
+  selected?: boolean;
+  onToggle?: (checked: boolean) => void;
+  showCheckbox?: boolean;
+}
+
+function storeProductUrl(domain: string | null | undefined, handle: string): string | null {
+  const host = (domain ?? "").trim();
+  if (!host || !handle) return null;
+  const base = /^https?:\/\//i.test(host) ? host.replace(/\/+$/, "") : `https://${host}`;
+  return `${base}/products/${encodeURIComponent(handle)}`;
+}
+
+export function ProductDesktopRow({ product, categoryMap, canManage, onDelete, storeDomain, selected, onToggle, showCheckbox }: RowProps) {
+  const t = useT("products");
+  const common = useT("common");
+  const locale = useLocale();
+  const category = product.categoryId
+    ? categoryMap.get(product.categoryId)
+    : undefined;
+  const detailHref = `/products/${encodeURIComponent(product.id)}`;
+  const viewHref = storeProductUrl(storeDomain, product.handle) ?? detailHref;
+  const viewExternal = viewHref !== detailHref;
+  const editHref = `/products/${encodeURIComponent(product.id)}/edit`;
+  return (
+    <TableRow>
+      {showCheckbox && (
+        <TableCell className="w-10">
+          <input
+            type="checkbox"
+            checked={selected ?? false}
+            onChange={(event) => onToggle?.(event.currentTarget.checked)}
+            aria-label={t("select_row").replace("{name}", product.name)}
+            className="size-4 accent-primary"
+          />
+        </TableCell>
+      )}
+      <TableCell>
+        <a
+          href={`/products/${encodeURIComponent(product.id)}`}
+          className="inline-flex min-w-0 items-center gap-3 font-semibold text-link hover:underline"
+        >
+          <span className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-lg border border-border bg-muted">
+            {product.primaryImageSrc ? (
+              <img
+                src={product.primaryImageSrc}
+                alt={product.name}
+                className="size-full object-cover"
+              />
+            ) : (
+              <Package size={16} className="text-muted-foreground/50" />
+            )}
+          </span>
+          <span className="min-w-0">
+            <span className="block truncate">{product.name}</span>
+            {product.sku && (
+              <span className="block truncate font-mono text-[10px] uppercase text-muted-foreground/60">
+                {product.sku}
+              </span>
+            )}
+          </span>
+        </a>
+      </TableCell>
+      <TableCell>
+        <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold text-muted-foreground">
+          {category?.name ?? "—"}
+        </span>
+      </TableCell>
+      <TableCell>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <ProductStatusBadge product={product} />
+          {product.showInStore === false && <HiddenFromStoreBadge />}
+        </div>
+      </TableCell>
+      <TableCell className="text-sm font-semibold tabular-nums">
+        {formatMoneyValue(product.price, locale)}
+      </TableCell>
+      <TableCell className="text-sm tabular-nums text-muted-foreground">
+        {product.variantsCount ?? 0}
+      </TableCell>
+      <TableCell>
+        <StockValue product={product} />
+      </TableCell>
+      <TableCell>
+        <ReviewValue product={product} />
+      </TableCell>
+      <TableCell>
+        <div className="flex justify-end">
+          <DropdownMenu
+            trigger={<MoreHorizontal size={16} />}
+            triggerLabel={`${common("table.actions")}: ${product.name}`}
+          >
+            <DropdownLink href={viewHref} target={viewExternal ? "_blank" : undefined} rel={viewExternal ? "noopener noreferrer" : undefined}>
+              <Eye size={14} />
+              {t("actions.view")}
+            </DropdownLink>
+            {canManage && (
+              <DropdownLink href={editHref}>
+                <Pencil size={14} />
+                {t("actions.edit")}
+              </DropdownLink>
+            )}
+            {canManage && (
+              <DropdownItem danger onClick={() => onDelete(product)}>
+                <Trash2 size={14} />
+                {t("actions.delete")}
+              </DropdownItem>
+            )}
+          </DropdownMenu>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+export function ProductMobileCard({ product, categoryMap, canManage, onDelete, storeDomain, selected, onToggle, showCheckbox }: RowProps) {
+  const t = useT("products");
+  const common = useT("common");
+  const category = product.categoryId
+    ? categoryMap.get(product.categoryId)
+    : undefined;
+  const detailHref = `/products/${encodeURIComponent(product.id)}`;
+  const viewHref = storeProductUrl(storeDomain, product.handle) ?? detailHref;
+  const viewExternal = viewHref !== detailHref;
+  const editHref = `/products/${encodeURIComponent(product.id)}/edit`;
+  return (
+    <article className="border-b border-border p-4 last:border-0">
+      <div className="flex items-start gap-3">
+        {showCheckbox && (
+          <input
+            type="checkbox"
+            checked={selected ?? false}
+            onChange={(event) => onToggle?.(event.currentTarget.checked)}
+            aria-label={t("select_row").replace("{name}", product.name)}
+            className="mt-1 size-4 shrink-0 accent-primary"
+          />
+        )}
+        <span className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-xl border border-border bg-muted">
+          {product.primaryImageSrc ? (
+            <img
+              src={product.primaryImageSrc}
+              alt={product.name}
+              className="size-full object-cover"
+            />
+          ) : (
+            <Package size={20} className="text-muted-foreground/30" />
+          )}
+        </span>
+        <div className="min-w-0 flex-1">
+          <a
+            href={`/products/${encodeURIComponent(product.id)}`}
+            className="block truncate font-semibold text-link"
+          >
+            {product.name}
+          </a>
+          {product.sku && (
+            <p className="mt-0.5 font-mono text-[10px] uppercase text-muted-foreground/60">
+              {product.sku}
+            </p>
+          )}
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <ProductStatusBadge product={product} />
+            {product.showInStore === false && <HiddenFromStoreBadge />}
+            {category && (
+              <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
+                {category.name}
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="flex">
+          <DropdownMenu
+            trigger={<MoreHorizontal size={16} />}
+            triggerLabel={`${common("table.actions")}: ${product.name}`}
+          >
+            <DropdownLink href={viewHref} target={viewExternal ? "_blank" : undefined} rel={viewExternal ? "noopener noreferrer" : undefined}>
+              <Eye size={14} />
+              {t("actions.view")}
+            </DropdownLink>
+            {canManage && (
+              <DropdownLink href={editHref}>
+                <Pencil size={14} />
+                {t("actions.edit")}
+              </DropdownLink>
+            )}
+            {canManage && (
+              <DropdownItem danger onClick={() => onDelete(product)}>
+                <Trash2 size={14} />
+                {t("actions.delete")}
+              </DropdownItem>
+            )}
+          </DropdownMenu>
+        </div>
+      </div>
+    </article>
+  );
+}

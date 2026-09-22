@@ -1,0 +1,160 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# CodFlow server — Cloudflare Worker configuration
+#
+# EVERY value below is a placeholder you must replace with your own resources.
+# Nothing in this repo depends on a specific Cloudflare account, domain, or
+# database. See README.md → "Getting Started" for step-by-step setup.
+#
+#   wrangler d1 create codflow-os-db  → gives you a database_id
+#   wrangler r2 bucket create codflow-images
+#   wrangler kv namespace create RATE_LIMIT
+#   wrangler kv namespace create OAUTH_KV
+#   wrangler deploy
+# ─────────────────────────────────────────────────────────────────────────────
+
+name = "codflow-server"
+main = "src/index.ts"
+compatibility_date = "2024-11-27"
+compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
+
+# D1 database binding.
+[[d1_databases]]
+binding = "DB"
+database_name = "codflow-os-db"
+# Replace with the id from `wrangler d1 create codflow-os-db`.
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "src/db/migrations"
+
+# R2 bucket for product images (serve + presigned uploads).
+# Replace with the name from `wrangler r2 bucket create codflow-images`.
+[[r2_buckets]]
+binding = "IMAGES"
+bucket_name = "codflow-images"
+
+# Cloudflare Images binding — write-time WebP transcode for landing page
+# uploads (billed as unique transformations; 5,000/month free tier).
+[images]
+binding = "IMAGE_TRANSFORM"
+
+# KV namespace for rate limiting.
+[[kv_namespaces]]
+binding = "RATE_LIMIT"
+id = "00000000000000000000000000000000"
+
+# KV namespace for the MCP OAuth provider (clients, grants, tokens, props).
+# Create with: wrangler kv namespace create OAUTH_KV
+[[kv_namespaces]]
+binding = "OAUTH_KV"
+id = "00000000000000000000000000000000"
+
+# CodCapiWorkflow — fires Meta CAPI Purchase events at order delivery.
+[[workflows]]
+name       = "capi-workflow"
+binding    = "CAPI_WORKFLOW"
+class_name = "CodCapiWorkflow"
+
+# CodTiktokWorkflow — fires TikTok Events API events across the COD lifecycle.
+# Fully separate from CAPI (own config, own audit log, own idempotency namespace).
+[[workflows]]
+name       = "tiktok-workflow"
+binding    = "TIKTOK_WORKFLOW"
+class_name = "CodTiktokWorkflow"
+
+# CodLandingPageImageUploadWorkflow — durable background upload of MCP-agent
+# images (ChatGPT & co.) into landing page image stacks.
+[[workflows]]
+name       = "lp-image-upload-workflow"
+binding    = "LP_IMAGE_UPLOAD_WORKFLOW"
+class_name = "CodLandingPageImageUploadWorkflow"
+
+# The `agents` package statically imports `cloudflare:email`. Declaring this
+# satisfies the module resolver even though this Worker never sends email.
+# (Cloudflare's local dev runtime fails to load the Worker without it.)
+[[send_email]]
+name = "SEND_EMAIL_UNUSED"
+
+# Cron Triggers
+# Sweeps pending abandoned orders → abandoned status every hour.
+# Maximum lag from "true abandonment" to "marked abandoned" is ~90 min (pending > 30 min).
+[triggers]
+crons = ["0 * * * *"]
+
+# Environment variables (non-secret).
+#
+# Local dev defaults work out of the box. For a deployed worker, replace the
+# URLs with your own public domains:
+#   WORKER_URL       → https://api.yourdomain.com      (your Worker's public URL)
+#   STOREFRONT_URL   → https://store.yourdomain.com    (optional fallback for landing
+#                      page share URLs when the merchant hasn't set their store domain
+#                      in Store Settings yet)
+#   MEDIA_DOMAIN     → media.yourdomain.com            (domain fronting your R2 bucket)
+#   BETTER_AUTH_URL  → https://dashboard.yourdomain.com/api/auth (the dashboard
+#                       Worker's Better Auth origin — JWT issuer verified here)
+#   WORKER_SELF_URL  → https://api.yourdomain.com/     (this Worker's own origin;
+#                       required `aud` claim for MCP bearer tokens)
+[vars]
+ENVIRONMENT = "development"
+WORKER_URL = "http://localhost:8787"
+MEDIA_DOMAIN = "media.example.com"
+R2_BUCKET_NAME = "codflow-images"
+BETTER_AUTH_URL = "http://localhost:4321/api/auth"
+WORKER_SELF_URL = "http://localhost:8787/"
+# Development allows all origins for easier testing. Production uses ALLOWED_ORIGINS.
+ALLOWED_ORIGINS = "*"
+
+# Production environment.
+# Deploy with `wrangler deploy --env production` after editing the values.
+# IMPORTANT: Set ALLOWED_ORIGINS to your actual dashboard and storefront domains.
+[env.production]
+vars = { ENVIRONMENT = "production", WORKER_URL = "https://api.example.com", MEDIA_DOMAIN = "media.example.com", R2_BUCKET_NAME = "codflow-images", BETTER_AUTH_URL = "https://dashboard.example.com/api/auth", WORKER_SELF_URL = "https://api.example.com/", ALLOWED_ORIGINS = "https://dashboard.example.com,https://store.example.com", STOREFRONT_URL = "https://store.example.com" }
+
+[[env.production.r2_buckets]]
+binding = "IMAGES"
+bucket_name = "codflow-images"
+
+[env.production.images]
+binding = "IMAGE_TRANSFORM"
+
+# Environment bindings are non-inheritable in Wrangler — every binding used by
+# the Worker must be declared here or a production deploy silently ships without it.
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "codflow-os-db"
+database_id = "00000000-0000-0000-0000-000000000000"
+
+[[env.production.kv_namespaces]]
+binding = "RATE_LIMIT"
+id = "00000000000000000000000000000000"
+
+[[env.production.kv_namespaces]]
+binding = "OAUTH_KV"
+id = "00000000000000000000000000000000"
+
+[[env.production.send_email]]
+name = "SEND_EMAIL_UNUSED"
+
+[[env.production.workflows]]
+name       = "capi-workflow"
+binding    = "CAPI_WORKFLOW"
+class_name = "CodCapiWorkflow"
+
+[[env.production.workflows]]
+name       = "tiktok-workflow"
+binding    = "TIKTOK_WORKFLOW"
+class_name = "CodTiktokWorkflow"
+
+[[env.production.workflows]]
+name       = "lp-image-upload-workflow"
+binding    = "LP_IMAGE_UPLOAD_WORKFLOW"
+class_name = "CodLandingPageImageUploadWorkflow"
+
+# Share local D1 state with the dashboard so both read the same SQLite file in
+# dev. `persist_to` under [dev] is not a wrangler 3.x field (hence the old
+# warning); the shared path is wired in via --persist-to in package.json dev +
+# migration scripts, and astro dev's persistState in cod-client-astro.
+# Shared path resolves to <repo-root>/.wrangler-shared.
+[dev]
+port = 8787
+
+[observability]
+enabled = false

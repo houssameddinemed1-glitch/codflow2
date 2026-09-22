@@ -1,0 +1,17 @@
+{
+  "name": "codflow",
+  "private": true,
+  "description": "CodFlow — COD e-commerce platform monorepo (Cloudflare Workers + Astro + D1).",
+  "workspaces": [
+    "cod-shared",
+    "cod-server",
+    "cod-client-astro",
+    "cod-astro/theme01"
+  ],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "overrides": {
+    "vite": "^8.2.2"
+  }
+}

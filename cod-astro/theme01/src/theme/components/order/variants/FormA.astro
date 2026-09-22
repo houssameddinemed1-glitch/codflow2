@@ -1,0 +1,307 @@
+---
+// Form A — Hanotify-style compact checkout.
+//
+// Contract: identical Props, hidden input names/ids, sub-component behavior
+// and form action as OrderForm.astro (the Default form). product.ts drives
+// everything by element id, so every id below must stay byte-identical:
+//   f-name, f-phone, f-wilaya, f-commune, qty-input, offer-id-input,
+//   variant-id-input, variant-label-input, variant-selections-input,
+//   price-input, fbc/fbp/otp inputs, summary-*-ids, offer-row-*, submit-btn,
+//   .tier-label cards (OfferTiers), order-section.
+//
+// Differences vs Default (visual only):
+//   - title heading + 2-column customer fields (no labels, placeholders only)
+//   - stepper + confirm CTA row when offers exist (own fa-* ids, synced to
+//     the hidden qty-input through its native input event)
+//   - flat summary panel instead of the ticket card
+// Delivery-type radios are intentionally omitted (home default, like the
+// reference design) — product.ts falls back to "home" when absent.
+// Stop-desk stays available through the Default form.
+//
+// HOW TO ADD FORM B (and later C, D…): see ../OrderFormVariant.astro.
+import { actions } from "astro:actions";
+import type { Product, ProductVariant, Offer } from "@/core/api/types";
+import type { StoreFrontContent } from "@/theme/config/content";
+import { Icon } from "astro-icon/components";
+import Select from "@/theme/components/ui/Select.astro";
+import { WILAYAS } from "@/core/data/wilayas";
+
+import VariantSelector from "../VariantSelector.astro";
+import OfferTiers from "../OfferTiers.astro";
+import OtpStep from "../OtpStep.astro";
+import TurnstileField from "../TurnstileField.astro";
+
+interface Props {
+  product: Product;
+  content: StoreFrontContent;
+  fieldErrors: Record<string, string[] | undefined>;
+  serverError: string | null;
+  basePrice: number;
+  defaultVariant: ProductVariant | null;
+  cur: string;
+  isRTL: boolean;
+  offers: Offer[];
+  defaultVariantId: string | null;
+  isOutOfStock?: boolean;
+  otpEnabled?: boolean;
+  turnstileEnabled?: boolean;
+  turnstileSiteKey?: string | null;
+  /** Landing page attribution — rides the form like fbc/fbp (best-effort). */
+  landingPageSlug?: string | null;
+}
+
+const { product, content, fieldErrors, serverError, basePrice, defaultVariant, cur, isRTL, offers, defaultVariantId, isOutOfStock = false, otpEnabled = false, turnstileEnabled = false, turnstileSiteKey = null, landingPageSlug = null } = Astro.props;
+
+function fmt(n: number) {
+  return n.toLocaleString("ar-DZ");
+}
+---
+
+<div id="order-section" class="rounded-3xl border-2 p-5 sm:p-7 shadow-xl" style="border-color: var(--clr-primary); background: var(--clr-surface)">
+  <!-- Title -->
+  <h2 class="font-black text-[1.125rem] leading-snug text-center mb-5" style="color: var(--clr-text)">
+    {content.formCustomTitle}
+  </h2>
+
+  {serverError && (
+    <div class="mb-5 p-4 bg-red-50 border border-red-100 rounded-2xl text-[0.875rem] font-bold text-red-600 flex items-start gap-3">
+      <Icon name="heroicons:exclamation-triangle" class="w-5 h-5 shrink-0" />
+      <p>{serverError}</p>
+    </div>
+  )}
+
+  <form method="POST" action={actions.placeOrder} class="space-y-4">
+    <!-- Hidden product fields — identical names/ids to the Default form -->
+    <input type="hidden" name="productId"          value={product.id} />
+    <!-- Meta Pixel tracking (populated by JS at submit time) -->
+    <input type="hidden" name="fbc" id="fbc-input" value="" />
+    <input type="hidden" name="fbp" id="fbp-input" value="" />
+    <input type="hidden" name="productName"        value={product.name} />
+    <input type="hidden" name="pricePerUnit"       value={basePrice} id="price-input" />
+    <input type="hidden" name="variantId"          value={defaultVariant?.id ?? ""} id="variant-id-input" />
+    <input type="hidden" name="variantLabel"       value="" id="variant-label-input" />
+    <input type="hidden" name="offerId"            value="" id="offer-id-input" />
+    <input type="hidden" name="variantSelections"  value="[]" id="variant-selections-input" />
+    {/* WhatsApp OTP proof — set by the OTP step script after verification */}
+    <input type="hidden" name="otpToken" id="otp-token-input" value="" />
+    {/* Landing page attribution — present only on landing pages */}
+    {landingPageSlug && <input type="hidden" name="landingPageSlug" value={landingPageSlug} />}
+
+    <!-- Customer fields — 2-column grid, placeholders only -->
+    <div class="grid grid-cols-2 gap-3">
+      <div>
+        <input
+          id="f-name" type="text" name="customerName"
+          required autocomplete="name"
+          placeholder={content.formNameLabel}
+          class:list={["form-input !text-center", fieldErrors.customerName && "error"]}
+        />
+        {fieldErrors.customerName && (
+          <p class="text-[0.75rem] text-red-500 font-bold mt-1.5 text-center">{fieldErrors.customerName[0]}</p>
+        )}
+      </div>
+      <div>
+        <input
+          id="f-phone" type="tel" name="phone"
+          required autocomplete="tel" inputmode="tel"
+          placeholder={content.formPhoneLabel}
+          dir="ltr"
+          class:list={["form-input !text-center", fieldErrors.phone && "error"]}
+        />
+        {fieldErrors.phone && (
+          <p class="text-[0.75rem] text-red-500 font-bold mt-1.5 text-center">{fieldErrors.phone[0]}</p>
+        )}
+      </div>
+      <div>
+        <Select
+          id="f-wilaya"
+          name="wilayaId"
+          label=""
+          placeholder={content.formWilayaLabel}
+          searchPlaceholder={content.searchLabel}
+          noResultsText={content.noResultsLabel}
+          required={true}
+          error={fieldErrors.wilayaId?.[0]}
+          options={WILAYAS.map(w => ({
+            value: w.id,
+            label: `${w.id.toString().padStart(2, "0")} — ${isRTL ? w.nameAr : w.name}`
+          }))}
+        />
+        {fieldErrors.wilayaId && (
+          <p class="text-[0.75rem] text-red-500 font-bold mt-1.5 text-center">{fieldErrors.wilayaId[0]}</p>
+        )}
+      </div>
+      <div>
+        <Select
+          id="f-commune"
+          name="communeId"
+          label=""
+          placeholder={content.formCommuneLabel}
+          searchPlaceholder={content.searchLabel}
+          noResultsText={content.noResultsLabel}
+          required={true}
+          error={fieldErrors.communeId?.[0]}
+          options={[]}
+          dynamic={true}
+        />
+        {fieldErrors.communeId && (
+          <p class="text-[0.75rem] text-red-500 font-bold mt-1.5 text-center">{fieldErrors.communeId[0]}</p>
+        )}
+      </div>
+    </div>
+
+    {/* Standalone variant selector only when no offers — otherwise it lives inside the tier cards */}
+    {offers.length === 0 && <VariantSelector product={product} />}
+
+    {/* Delivery type — identical contract to the Default form
+        (label.delivery-radio-label > input.delivery-radio-input + div),
+        so product.ts styling, address toggling and shipping calc apply. */}
+    <fieldset>
+      <legend class="form-label text-center">{content.formDeliveryLabel}</legend>
+      <div class="grid grid-cols-2 gap-3" id="delivery-type-group">
+        {[
+          { value: "home",      icon: "heroicons:home", label: content.formHomeDelivery },
+          { value: "stop_desk", icon: "heroicons:cube", label: content.formStopDesk },
+        ].map(({ value, icon, label }, i) => (
+          <label class="delivery-radio-label relative cursor-pointer group">
+            <input
+              type="radio" name="deliveryType" value={value}
+              checked={i === 0} class="sr-only delivery-radio-input"
+            />
+            <div class:list={[
+              "h-14 rounded-2xl border-2 flex items-center justify-center gap-2.5 font-black text-[0.875rem] transition-all select-none active:scale-95",
+              i === 0
+                ? "border-[var(--clr-primary)] text-[var(--clr-primary)] bg-[var(--clr-primary)]/5 shadow-sm"
+                : "border-[var(--clr-border)] text-[var(--clr-text-2)] bg-[var(--clr-surface-alt)]"
+            ]}>
+              <Icon name={icon} class="w-5 h-5" /><span>{label}</span>
+            </div>
+          </label>
+        ))}
+      </div>
+    </fieldset>
+
+    <OfferTiers
+      product={product}
+      offers={offers}
+      basePrice={basePrice}
+      comparePrice={defaultVariant?.compareAtPrice ?? product.compareAtPrice ?? null}
+      cur={cur}
+      isRTL={isRTL}
+      content={content}
+      defaultVariantId={defaultVariantId}
+    />
+
+    {otpEnabled && <OtpStep content={content} isRTL={isRTL} />}
+
+    {turnstileEnabled && turnstileSiteKey && (
+      <TurnstileField siteKey={turnstileSiteKey} content={content} />
+    )}
+
+    {offers.length > 0 && (
+      <div class="flex items-stretch gap-2.5" dir="ltr">
+        <div class="flex items-center rounded-xl border overflow-hidden shrink-0" style="border-color: var(--clr-border); background: var(--clr-surface)">
+          <button type="button" id="fa-qty-minus" aria-label="−" class="w-10 h-full min-h-[3.25rem] font-black text-xl active:scale-90 transition-all select-none" style="color: var(--clr-text-2)">−</button>
+          <span id="fa-qty-val" class="w-8 text-center font-black text-[1.0625rem]" style="color: var(--clr-text)">1</span>
+          <button type="button" id="fa-qty-plus" aria-label="+" class="w-10 h-full min-h-[3.25rem] font-black text-xl active:scale-90 transition-all select-none" style="color: var(--clr-text-2)">+</button>
+        </div>
+        <button
+          type="submit"
+          class:list={[
+            "btn-primary !h-auto min-h-[3.25rem] !text-[1rem] flex-1",
+            isOutOfStock && "!bg-[var(--clr-disabled)] cursor-not-allowed"
+          ]}
+          id="submit-btn"
+          disabled={isOutOfStock || undefined}
+        >
+          {isOutOfStock ? content.outOfStock : content.formConfirmCta}
+        </button>
+      </div>
+    )}
+    {offers.length === 0 && (
+      <button
+        type="submit"
+        class:list={[
+          "btn-primary !h-[3.5rem] !text-[1.0625rem] w-full",
+          isOutOfStock && "!bg-[var(--clr-disabled)] cursor-not-allowed"
+        ]}
+        id="submit-btn"
+        disabled={isOutOfStock || undefined}
+      >
+        {isOutOfStock ? content.outOfStock : content.formConfirmCta}
+      </button>
+    )}
+
+    <!-- Summary panel -->
+    <div class="rounded-2xl overflow-hidden" style="background: color-mix(in srgb, var(--clr-primary) 7%, white)">
+      <div class="flex items-center justify-between px-4 py-3 border-b" style="border-color: color-mix(in srgb, var(--clr-primary) 12%, transparent)">
+        <span class="font-black text-[0.9375rem]" style="color: var(--clr-text)">{content.formSummaryTitle}</span>
+        <span class="flex items-center gap-1.5" style="color: var(--clr-text-2)">
+          <Icon name="heroicons:shopping-bag" class="w-5 h-5" />
+          <Icon name="heroicons:chevron-down" class="w-4 h-4" />
+        </span>
+      </div>
+      <div class="px-4 py-3 space-y-2.5 text-[0.875rem] font-bold" style="color: var(--clr-text)">
+        <div class="flex items-center justify-between gap-2">
+          <span class="min-w-0 truncate">{product.name} 🎁</span>
+          <span class="shrink-0 whitespace-nowrap">
+            <span id="summary-qty-label">1 ×&nbsp;</span><span id="summary-item-price">{fmt(basePrice)} {cur}</span>
+          </span>
+        </div>
+        {offers.map((offer) => (
+          <div id={`offer-row-${offer.id}`} class="hidden flex items-center justify-between gap-2 text-emerald-600">
+            <span class="min-w-0 truncate">{offer.name} 🎁</span>
+          </div>
+        ))}
+        <div class="flex items-center justify-between gap-2 border-t border-dashed pt-2.5" style="border-color: color-mix(in srgb, var(--clr-primary) 15%, transparent)">
+          <span style="color: var(--clr-text-2)">{content.shippingLabel}</span>
+          <span id="summary-shipping" style="color: var(--clr-text-2)">{content.shippingCalculated}</span>
+        </div>
+        <div class="flex items-center justify-between gap-2">
+          <span style="color: var(--clr-primary)">{content.totalLabel}</span>
+          <span id="summary-total" class="font-black" style="color: var(--clr-primary)">{fmt(basePrice)} {cur}</span>
+        </div>
+      </div>
+    </div>
+
+    <p class="text-center text-[0.8125rem] font-bold px-4" style="color: var(--clr-text-2)">
+      {content.formConfirmNote}
+    </p>
+  </form>
+</div>
+
+<script is:inline>
+(function () {
+  // Form A stepper sync: the visible fa-* controls drive the hidden
+  // #qty-input (owned by OfferTiers) through its native input event, so
+  // product.ts refreshes prices, stock caps and totals untouched.
+  var q = document.getElementById("qty-input");
+  var v = document.getElementById("fa-qty-val");
+  function sync() {
+    if (q && v) v.textContent = q.value || "1";
+  }
+  function set(n) {
+    if (!q) return;
+    var max = parseInt(q.max || "100", 10) || 100;
+    n = Math.max(1, Math.min(max, n));
+    q.value = String(n);
+    q.dispatchEvent(new Event("input", { bubbles: true }));
+    sync();
+  }
+  var minus = document.getElementById("fa-qty-minus");
+  var plus = document.getElementById("fa-qty-plus");
+  if (minus && plus && q) {
+    minus.addEventListener("click", function () {
+      set((parseInt(q.value || "1", 10) || 1) - 1);
+    });
+    plus.addEventListener("click", function () {
+      set((parseInt(q.value || "1", 10) || 1) + 1);
+    });
+    // Tier selection writes qty directly — re-sync the visible counter.
+    document.querySelectorAll(".tier-label").forEach(function (l) {
+      l.addEventListener("click", function () { setTimeout(sync, 0); });
+    });
+    sync();
+  }
+})();
+</script>

@@ -1,0 +1,224 @@
+import { tool } from "ai";
+import { z } from "zod";
+import * as queries from "./queries";
+import { createPaymentSchema } from "./validation";
+import { getDb } from "@/db";
+import { toolOutput, timestampSchema } from "@/lib/tool-output-schema";
+
+/**
+ * Layer-2 validation schemas, hoisted to module level and exported so the MCP
+ * layer (src/mcp/schemas.ts) can derive tools/list inputSchema from the exact
+ * same definitions — the advertised schema and the executed validation cannot
+ * drift apart.
+ */
+export const listDriverPaymentsSchema = z.object({
+  driverId: z.string().uuid().describe("The unique UUID of the driver to retrieve payments for"),
+});
+export const getPendingSettlementsSchema = z.object({
+  driverId: z.string().uuid().describe("The unique UUID of the driver"),
+});
+export const createDriverSettlementSchema = createPaymentSchema.extend({
+  agentName: z.string().min(1).describe("The name of the AI agent or staff member creating the settlement"),
+});
+
+export const DRIVER_PAYMENT_TOOL_SCHEMAS: Record<string, z.ZodRawShape> = {
+  listDriverPayments: listDriverPaymentsSchema.shape,
+  getPendingSettlements: getPendingSettlementsSchema.shape,
+  createDriverSettlement: createDriverSettlementSchema.shape,
+};
+
+export const DRIVER_PAYMENT_TOOL_OUTPUT_SCHEMAS: Record<string, z.ZodType> = {
+  listDriverPayments: toolOutput({
+    count: z.number().int(),
+    payments: z.array(
+      z.looseObject({
+        id: z.string().describe("Payment record UUID"),
+        type: z.string().describe("Settlement type (COD remittance, fee payment, or net settlement)"),
+        amount: z.number().describe("Server-computed settlement amount in DZD"),
+        orderCount: z.number().int().describe("Orders settled in this payment"),
+        createdAt: timestampSchema,
+        createdByName: z.string().describe("Who created the settlement (audit attribution)"),
+        notes: z.string().nullable(),
+      }),
+    ).describe("Settlement history, newest first"),
+  }),
+  getPendingSettlements: toolOutput({
+    count: z.number().int(),
+    orders: z.array(
+      z.looseObject({
+        id: z.string().describe("Order UUID"),
+        orderNumber: z.string(),
+        codAmount: z.number().describe("Customer cash the driver still owes the shop (DZD)"),
+        driverFee: z.number().describe("Frozen per-delivery fee owed to the driver (DZD)"),
+        updatedAt: timestampSchema,
+        status: z.string(),
+      }),
+    ).describe("Delivered orders awaiting settlement"),
+  }),
+  createDriverSettlement: toolOutput({
+    settlement: z.looseObject({
+      type: z.string().optional().describe("Settlement type"),
+      orderCount: z.number().int().optional().describe("Orders settled"),
+      amount: z.number().optional().describe("Settled amount in DZD"),
+    }).describe("The created payment record"),
+    message: z.string(),
+  }),
+};
+
+/**
+ * AI Tools for Driver Payment Management
+ * 
+ * These tools allow the AI Agent to interact directly with the driver payments
+ * and settlement logic.
+ * 
+ * Two-Layer Validation Pattern:
+ * - Layer 1 (LLM-level): Permissive input schema accepts any object to prevent SDK crashes
+ * - Layer 2 (App-level): Strict validation inside execute() with graceful error handling
+ * 
+ * This ensures the AI agent can recover from validation errors without breaking the conversation.
+ */
+export const getDriverPaymentTools = (db: ReturnType<typeof getDb>) => ({
+  listDriverPayments: tool({
+    description: "Fetch all settlement and payment records for a specific driver. Returns history of COD remittances, fee payments, and net settlements.",
+    inputSchema: z.object({}).passthrough(), // Layer 1: Permissive input
+    execute: async (args) => {
+      // Layer 2: Strict validation
+      const validationSchema = listDriverPaymentsSchema;
+      
+      const parsed = validationSchema.safeParse(args);
+      
+      if (!parsed.success) {
+        const errorDetails = parsed.error.issues
+          .map((e: any) => `${e.path.join('.')}: ${e.message}`)
+          .join('; ');
+        return {
+          success: false,
+          error: `Invalid arguments: ${errorDetails}. Expected: driverId (UUID string)`,
+        };
+      }
+
+      try {
+        const payments = await queries.getDriverPayments(db, parsed.data.driverId);
+        return { 
+          success: true,
+          count: payments.length,
+          payments: payments.map(p => ({
+            id: p.id,
+            type: p.type,
+            amount: p.amount,
+            orderCount: p.orderCount,
+            createdAt: p.createdAt,
+            createdByName: p.createdByName,
+            notes: p.notes
+          }))
+        };
+      } catch (error: any) {
+        return { 
+          success: false, 
+          error: `Database error: ${error.message}` 
+        };
+      }
+    },
+  }),
+
+  getPendingSettlements: tool({
+    description: "Finds all delivered orders for a driver that have not yet been settled (COD or fees). Use this to prepare a payment or remittance. Returns orders in 'delivered' status with no COD payment linked.",
+    inputSchema: z.object({}).passthrough(), // Layer 1: Permissive input
+    execute: async (args) => {
+      // Layer 2: Strict validation
+      const validationSchema = getPendingSettlementsSchema;
+      
+      const parsed = validationSchema.safeParse(args);
+      
+      if (!parsed.success) {
+        const errorDetails = parsed.error.issues
+          .map((e: any) => `${e.path.join('.')}: ${e.message}`)
+          .join('; ');
+        return {
+          success: false,
+          error: `Invalid arguments: ${errorDetails}. Expected: driverId (UUID string)`,
+        };
+      }
+
+      try {
+        const orders = await queries.getPendingSettlementOrders(db, parsed.data.driverId);
+        return { 
+          success: true,
+          count: orders.length,
+          orders: orders.map(o => ({
+            id: o.id,
+            orderNumber: o.orderNumber,
+            codAmount: o.codAmount,
+            driverFee: o.driverFee,
+            updatedAt: o.updatedAt,
+            status: o.status
+          }))
+        };
+      } catch (error: any) {
+        return { 
+          success: false, 
+          error: `Database error: ${error.message}` 
+        };
+      }
+    },
+  }),
+
+  createDriverSettlement: tool({
+    description: "Creates a new payment/settlement record for a driver. Use this to settle multiple delivered orders at once. Required: driverId (UUID), type (cod_remittance|fee_payment|net_settlement), orderIds (array of UUIDs), agentName (string). Optional: notes. Orders must be in 'delivered' status and not already settled.",
+    inputSchema: z.object({}).passthrough(), // Layer 1: Permissive input
+    execute: async (args) => {
+      // Layer 2: Strict validation
+      const validationSchema = createDriverSettlementSchema;
+      
+      const parsed = validationSchema.safeParse(args);
+      
+      if (!parsed.success) {
+        const errorDetails = parsed.error.issues
+          .map((e: any) => `${e.path.join('.')}: ${e.message}`)
+          .join('; ');
+        return {
+          success: false,
+          error: `Invalid settlement data: ${errorDetails}. Required: driverId (UUID), type (cod_remittance|fee_payment|net_settlement), orderIds (array of order UUIDs, min 1), agentName (string). Optional: notes (string). Orders must be in 'delivered' status and not already settled for the requested type.`,
+        };
+      }
+
+      try {
+        const result = await queries.createDriverPayment(
+          db, 
+          {
+            driverId: parsed.data.driverId,
+            type: parsed.data.type,
+            orderIds: parsed.data.orderIds,
+            notes: parsed.data.notes,
+          }, 
+          "ai-agent", // Hardcoded agent ID or generic placeholder
+          parsed.data.agentName
+        );
+        return { 
+          success: true, 
+          settlement: result, 
+          message: `Settlement created: ${result.type} for ${result.orderCount} order(s), amount: ${result.amount} DZD` 
+        };
+      } catch (error: any) {
+        let errorMessage = error.message;
+        
+        // Parse BusinessLogicError with structured data
+        if (error.data) {
+          const data = error.data;
+          if (data.settledOrderIds && data.settledCount) {
+            errorMessage = `${error.message}. ${data.settledCount} order(s) are already settled. Check order settlement status before retrying.`;
+          } else if (data.requestedCount && data.foundCount) {
+            errorMessage = `${error.message}. Requested ${data.requestedCount} orders but only found ${data.foundCount} valid delivered orders for this driver. Verify order IDs, driver assignment, and order status.`;
+          } else {
+            errorMessage = `${error.message}: ${JSON.stringify(data)}`;
+          }
+        }
+        
+        return { 
+          success: false, 
+          error: errorMessage 
+        };
+      }
+    },
+  }),
+});

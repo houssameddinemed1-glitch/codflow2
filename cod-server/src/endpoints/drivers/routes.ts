@@ -1,0 +1,353 @@
+/**
+ * Drivers Routes
+ *
+ * Driver management CRUD, availability status toggle, and per-wilaya
+ * compensation management. All routes require an API key with the
+ * appropriate delivery scope.
+ * Built with defineRoute() — the standard route-builder pattern.
+ */
+
+import { OpenAPIHono, z } from "@hono/zod-openapi";
+import type { AppContext } from "@/types";
+import { defineRoute } from "@/lib/route-builder";
+import { SCOPES } from "../../../../cod-shared/rbac/scopes";
+import * as handlers from "./handlers";
+import {
+  DriverSchema,
+  DriverCompensationRowSchema,
+  SuccessResponseSchema,
+  SuccessWithMessageSchema,
+  ListResponseSchema,
+} from "@/openapi/schemas";
+
+const jsonContent = <T extends z.ZodType>(schema: T) => ({
+  "application/json": { schema },
+});
+
+const phoneRegex = /^0[5-7]\d{8}$/;
+
+const phoneField = () =>
+  z.string().regex(phoneRegex, "Invalid Algerian phone number (0[5-7]XXXXXXXX)").openapi({
+    pattern: phoneRegex.source,
+    description: "Algerian mobile number starting with 05, 06, or 07",
+    example: "0551234567",
+  });
+
+const idParams = z.object({
+  id: z.string().openapi({ description: "Driver ID", example: "drv_123" }),
+});
+
+const compensationParams = z.object({
+  ...idParams.shape,
+  wilayaId: z.coerce.number().int().min(1).max(58).openapi({
+    description: "Wilaya ID (1–58)",
+    example: 16,
+  }),
+});
+
+// ─── Request schemas ──────────────────────────────────────────────────────────
+
+const listQuerySchema = z.object({
+  wilayaId: z.coerce.number().int().min(1).max(58).optional().openapi({
+    description: "Filter to drivers with a configured compensation row for this wilaya (1–58)",
+  }),
+  status: z.enum(["available", "busy", "inactive"]).optional().openapi({
+    description: "Filter by availability status",
+  }),
+  vehicleType: z.enum(["motorcycle", "car", "van"]).optional().openapi({
+    description: "Filter by vehicle type",
+  }),
+  search: z.string().optional().openapi({
+    description: "Search by first name, last name, or phone",
+  }),
+  limit: z.coerce.number().int().positive().max(100).default(50).openapi({
+    description: "Maximum number of results to return",
+  }),
+  offset: z.coerce.number().int().min(0).default(0).openapi({
+    description: "Number of results to skip for pagination",
+  }),
+});
+
+const createBodySchema = z.object({
+  firstName: z.string().min(1, "First name is required").openapi({ example: "Mohamed" }),
+  lastName: z.string().min(1, "Last name is required").openapi({ example: "Amiri" }),
+  phone: phoneField(),
+  phone2: z.preprocess(
+    (v) => (v === "" || v == null ? undefined : v),
+    z.string().regex(phoneRegex, "Invalid Algerian phone number").optional()
+  ).openapi({ description: "Optional secondary phone number" }),
+  vehicleType: z.enum(["motorcycle", "car", "van"]).nullable().optional().openapi({
+    description: "Type of vehicle. Omit or null if unknown.",
+  }),
+  status: z.enum(["available", "busy", "inactive"]).default("available").openapi({
+    description: "Availability status. Defaults to `available`.",
+  }),
+  notes: z.preprocess(
+    (v) => (v === "" || v == null ? undefined : v),
+    z.string().optional().nullable()
+  ).openapi({
+    description: "Internal notes about the driver (not visible to customers)",
+  }),
+});
+
+const updateBodySchema = z.object({
+  firstName: z.string().min(1, "First name is required").optional(),
+  lastName: z.string().min(1, "Last name is required").optional(),
+  phone: phoneField().optional(),
+  phone2: z.preprocess(
+    (v) => (v === "" ? null : v),
+    z.string().regex(phoneRegex, "Invalid Algerian phone number").nullable().optional()
+  ).openapi({ description: "Updated secondary phone. Send `null` to clear it." }),
+  vehicleType: z.enum(["motorcycle", "car", "van"]).nullable().optional().openapi({
+    description: "Updated vehicle type. Send `null` to clear it.",
+  }),
+  notes: z.preprocess(
+    (v) => (v === "" ? null : v),
+    z.string().nullable().optional()
+  ).openapi({ description: "Updated internal notes. Send `null` to clear." }),
+});
+
+const updateStatusBodySchema = z.object({
+  status: z.enum(["available", "busy", "inactive"]).openapi({
+    description: "New availability status for the driver",
+  }),
+});
+
+const setCompensationBodySchema = z.object({
+  feePerDelivery: z.number().min(0).openapi({
+    description: "DZD per delivery in this wilaya.",
+    example: 350,
+  }),
+});
+
+// ─── Routes ───────────────────────────────────────────────────────────────────
+
+const listDriversRoute = defineRoute({
+  method: "get",
+  path: "/",
+  auth: { scope: SCOPES.DELIVERY_READ },
+  tags: ["Drivers"],
+  summary: "List drivers",
+  description:
+    "Returns a paginated list of drivers. Each item includes `compensationWilayaCount` — the number of wilayas with a configured per-delivery fee for this driver.",
+  operationId: "listDrivers",
+  query: listQuerySchema,
+  responses: {
+    200: {
+      description: "List of drivers",
+      content: jsonContent(ListResponseSchema(DriverSchema)),
+    },
+  },
+  handler: handlers.listDrivers,
+});
+
+const createDriverRoute = defineRoute({
+  method: "post",
+  path: "/",
+  auth: { scope: SCOPES.DELIVERY_MANAGE },
+  tags: ["Drivers"],
+  summary: "Create driver",
+  description: "Register a new delivery driver.",
+  operationId: "createDriver",
+  body: createBodySchema,
+  responses: {
+    201: {
+      description:
+        "Driver created. Returns full driver record including `compensationWilayaCount` and `recentOrders`.",
+      content: jsonContent(SuccessWithMessageSchema(DriverSchema)),
+    },
+    409: {
+      description: "Duplicate phone number - a driver with this phone already exists (code: DUPLICATE_PHONE)",
+    },
+  },
+  handler: handlers.createDriver,
+});
+
+const getDriverRoute = defineRoute({
+  method: "get",
+  path: "/{id}",
+  auth: { scope: SCOPES.DELIVERY_READ },
+  tags: ["Drivers"],
+  summary: "Get driver",
+  description:
+    "Returns full driver detail including `compensationWilayaCount` and `recentOrders` (up to 10 most recent orders assigned to this driver). Use `GET /{id}/compensations` for the per-wilaya pay grid.",
+  operationId: "getDriver",
+  params: idParams,
+  responses: {
+    200: {
+      description: "Driver detail",
+      content: jsonContent(SuccessResponseSchema(DriverSchema)),
+    },
+  },
+  handler: handlers.getDriver,
+});
+
+const updateDriverRoute = defineRoute({
+  method: "patch",
+  path: "/{id}",
+  auth: { scope: SCOPES.DELIVERY_MANAGE },
+  tags: ["Drivers"],
+  summary: "Update driver",
+  description:
+    "Partial update — only include fields you want to change. Use `PATCH /{id}/status` to change availability status. Set `phone2`, `vehicleType`, or `notes` to null to clear them.",
+  operationId: "updateDriver",
+  params: idParams,
+  body: updateBodySchema,
+  responses: {
+    200: {
+      description: "Driver updated. Returns full updated driver record.",
+      content: jsonContent(SuccessWithMessageSchema(DriverSchema)),
+    },
+    409: {
+      description: "Duplicate phone number - a driver with this phone already exists (code: DUPLICATE_PHONE)",
+    },
+  },
+  handler: handlers.updateDriver,
+});
+
+const updateDriverStatusRoute = defineRoute({
+  method: "patch",
+  path: "/{id}/status",
+  auth: { scope: SCOPES.DELIVERY_MANAGE },
+  tags: ["Drivers"],
+  summary: "Update driver status",
+  description: "Updates driver availability status. Returns the full updated driver record.",
+  operationId: "updateDriverStatus",
+  params: idParams,
+  body: updateStatusBodySchema,
+  responses: {
+    200: {
+      description: "Status updated",
+      content: jsonContent(SuccessWithMessageSchema(DriverSchema)),
+    },
+  },
+  handler: handlers.updateDriverStatus,
+});
+
+const deleteDriverRoute = defineRoute({
+  method: "delete",
+  path: "/{id}",
+  auth: { scope: SCOPES.DELIVERY_MANAGE },
+  tags: ["Drivers"],
+  summary: "Delete driver",
+  description:
+    "Permanently deletes the driver. **Returns 409 if the driver has orders in `assigned` or `out_for_delivery` status** — resolve those orders first.",
+  operationId: "deleteDriver",
+  params: idParams,
+  responses: {
+    200: {
+      description: "Driver deleted",
+      content: jsonContent(
+        z.object({
+          success: z.boolean().openapi({ example: true }),
+          message: z.string().openapi({ example: "Driver deleted successfully" }),
+        })
+      ),
+    },
+    409: {
+      description: "Cannot delete driver with active orders (code: DRIVER_HAS_ACTIVE_ORDERS)",
+    },
+  },
+  handler: handlers.deleteDriver,
+});
+
+const listCompensationsRoute = defineRoute({
+  method: "get",
+  path: "/{id}/compensations",
+  auth: { scope: SCOPES.DELIVERY_READ },
+  tags: ["Drivers"],
+  summary: "List driver compensations",
+  description:
+    "Returns all 58 wilayas with the driver's configured per-delivery fee. `feePerDelivery` is `null` when no row has been configured for that wilaya (in which case the assigned order's driver fee defaults to 0).",
+  operationId: "listDriverCompensations",
+  params: idParams,
+  responses: {
+    200: {
+      description: "Per-wilaya compensation grid for this driver.",
+      content: jsonContent(
+        z.object({
+          success: z.boolean().openapi({ example: true }),
+          data: z.array(DriverCompensationRowSchema),
+        })
+      ),
+    },
+  },
+  handler: handlers.listCompensations,
+});
+
+const setCompensationRoute = defineRoute({
+  method: "put",
+  path: "/{id}/compensations/{wilayaId}",
+  auth: { scope: SCOPES.DELIVERY_MANAGE },
+  tags: ["Drivers"],
+  summary: "Upsert driver compensation for one wilaya",
+  description:
+    "Sets (or updates) the per-delivery fee this driver is paid for the given wilaya. Idempotent.",
+  operationId: "setDriverCompensation",
+  params: compensationParams,
+  body: setCompensationBodySchema,
+  responses: {
+    200: {
+      description: "Compensation saved.",
+      content: jsonContent(
+        z.object({
+          success: z.boolean().openapi({ example: true }),
+          data: z.object({
+            id: z.string(),
+            driverId: z.string(),
+            wilayaId: z.number().int(),
+            feePerDelivery: z.number(),
+            createdAt: z.string().datetime(),
+            updatedAt: z.string().datetime(),
+          }),
+          message: z.string().openapi({ example: "Compensation saved" }),
+        })
+      ),
+    },
+  },
+  handler: handlers.setCompensation,
+});
+
+const deleteCompensationRoute = defineRoute({
+  method: "delete",
+  path: "/{id}/compensations/{wilayaId}",
+  auth: { scope: SCOPES.DELIVERY_MANAGE },
+  tags: ["Drivers"],
+  summary: "Remove driver compensation for one wilaya",
+  description:
+    "Removes the per-delivery fee row for this driver/wilaya pair. Future assignments in that wilaya will compute driverFee = 0 until a new row is set.",
+  operationId: "deleteDriverCompensation",
+  params: compensationParams,
+  responses: {
+    200: {
+      description: "Compensation removed.",
+      content: jsonContent(
+        z.object({
+          success: z.boolean().openapi({ example: true }),
+          message: z.string().openapi({ example: "Compensation removed" }),
+        })
+      ),
+    },
+    404: {
+      description:
+        "Driver not found (`DRIVER_NOT_FOUND`) **or** no compensation row exists for this (driver, wilaya) pair (`DRIVER_COMPENSATION_NOT_FOUND`). Distinguish via the `code` field.",
+    },
+  },
+  handler: handlers.deleteCompensation,
+});
+
+// ─── Router ───────────────────────────────────────────────────────────────────
+
+const router = new OpenAPIHono<AppContext>();
+
+router.openapi(listDriversRoute.route, listDriversRoute.handler);
+router.openapi(createDriverRoute.route, createDriverRoute.handler);
+router.openapi(getDriverRoute.route, getDriverRoute.handler);
+router.openapi(updateDriverRoute.route, updateDriverRoute.handler);
+router.openapi(updateDriverStatusRoute.route, updateDriverStatusRoute.handler);
+router.openapi(deleteDriverRoute.route, deleteDriverRoute.handler);
+router.openapi(listCompensationsRoute.route, listCompensationsRoute.handler);
+router.openapi(setCompensationRoute.route, setCompensationRoute.handler);
+router.openapi(deleteCompensationRoute.route, deleteCompensationRoute.handler);
+
+export default router;

@@ -1,0 +1,46 @@
+---
+// Order form switcher — renders the store's active checkout form variation.
+//
+// "default" (or missing/unknown keys) always renders the untouched OrderForm,
+// so a misconfigured value can never break checkout. Each variation is a
+// separate theme component sharing OrderForm's Props and DOM contract
+// (hidden input names/ids, sub-components, form action).
+//
+// HOW TO ADD FORM B (and later C, D…):
+//   1. Copy variants/FormA.astro to variants/FormB.astro and restyle freely —
+//      keep every hidden input (name + id), the sub-components, the
+//      `id="order-section"` wrapper and the `id="submit-btn"` button.
+//   2. Add `variant === "form_b" ? FormB :` below.
+//   3. Add "form_b" to FORM_VARIANTS in cod-shared/queries/form-config.ts and
+//      to the dashboard VARIANTS list in FormSettings.tsx (+ locale keys).
+import type { Product, ProductVariant, Offer } from "@/core/api/types";
+import type { StoreFrontContent } from "@/theme/config/content";
+import OrderForm from "./OrderForm.astro";
+import FormA from "./variants/FormA.astro";
+
+interface Props {
+  product: Product;
+  content: StoreFrontContent;
+  fieldErrors: Record<string, string[] | undefined>;
+  serverError: string | null;
+  basePrice: number;
+  defaultVariant: ProductVariant | null;
+  cur: string;
+  isRTL: boolean;
+  offers: Offer[];
+  defaultVariantId: string | null;
+  isOutOfStock?: boolean;
+  otpEnabled?: boolean;
+  turnstileEnabled?: boolean;
+  turnstileSiteKey?: string | null;
+  /** Landing page attribution — rides the form like fbc/fbp (best-effort). */
+  landingPageSlug?: string | null;
+  /** Active variation key from store config (formVariant). Null/unknown → Default. */
+  variant?: string | null;
+}
+
+const { variant, ...formProps } = Astro.props;
+const ActiveForm = variant === "form_a" ? FormA : OrderForm;
+---
+
+<ActiveForm {...formProps} />

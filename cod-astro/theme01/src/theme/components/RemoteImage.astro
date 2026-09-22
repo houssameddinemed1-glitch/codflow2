@@ -1,0 +1,42 @@
+---
+// RemoteImage — plain <img> for API-served (remote) images.
+//
+// astro:assets <Image> with transform props routes through the /_image
+// endpoint, whose server-side fetch of a *.workers.dev URL is blocked by
+// Cloudflare (1042). R2 originals are already sized JPEGs, so link them
+// directly with explicit dimensions to avoid layout shift.
+interface Props {
+  src: string;
+  alt: string;
+  width?: number;
+  height?: number;
+  loading?: "eager" | "lazy";
+  decoding?: "async" | "sync";
+  fetchpriority?: "high" | "low" | "auto";
+  sizes?: string;
+  class?: string;
+}
+
+const {
+  src,
+  alt,
+  width,
+  height,
+  loading = "lazy",
+  decoding = "async",
+  fetchpriority,
+  sizes,
+  class: cls,
+} = Astro.props;
+---
+<img
+  src={src}
+  alt={alt}
+  width={width}
+  height={height}
+  loading={loading}
+  decoding={decoding}
+  fetchpriority={fetchpriority}
+  sizes={sizes}
+  class={cls}
+/>

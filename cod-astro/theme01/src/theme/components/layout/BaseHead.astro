@@ -1,0 +1,146 @@
+---
+// View transitions removed — ClientRouter caused dynamic module scripts
+// fetches on soft navigation to be served with empty Content-Type by the
+// SSR worker, breaking strict-MIME-checked module loading. After that
+// failure, product.ts never executed and every interactive element
+// (variant pills, offers, dropdowns, qty stepper) appeared "blocked".
+// We don't actually navigate between pages on the storefront — full page
+// loads are fine and removed the regression entirely.
+
+interface Props {
+  title: string;
+  description: string;
+  ogImage: string;
+  noindex?: boolean;
+  config: any;
+  primary: string;
+  fontHref: string;
+  font: string;
+  bg: string;
+  accent: string;
+  /** The page's LCP images (landing page stack top) — preloaded in <head>
+   *  so their fetch starts before the parser reaches the <img> tags. */
+  preloadImages?: string[];
+}
+
+const { title, description, ogImage, noindex, config, primary, fontHref, font, bg, accent, preloadImages } = Astro.props;
+
+import { MEDIA_DOMAIN } from "astro:env/server";
+---
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="generator" content={Astro.generator} />
+  <meta name="theme-color" content={primary} />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <title>{title}</title>
+  <meta name="description" content={description} />
+  {noindex && <meta name="robots" content="noindex,nofollow" />}
+
+  <!-- SEO -->
+  <link rel="canonical" href={Astro.url.href} />
+  <meta name="author" content={config.name} />
+
+  <!-- OG -->
+  <meta property="og:title" content={title} />
+  <meta property="og:site_name" content={config.name} />
+  <meta property="og:url" content={Astro.url.href} />
+  <meta property="og:description" content={description} />
+  {ogImage && <meta property="og:image" content={ogImage} />}
+  <meta property="og:type" content="website" />
+  <meta property="og:locale" content={config.lang === "ar" ? "ar_DZ" : "en_US"} />
+
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content={title} />
+  <meta name="twitter:description" content={description} />
+  {ogImage && <meta name="twitter:image" content={ogImage} />}
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href={fontHref} rel="stylesheet" media="print" onload="this.media='all'" />
+  <noscript><link href={fontHref} rel="stylesheet" /></noscript>
+
+  <!-- R2 media domain — early connection for product images -->
+  {MEDIA_DOMAIN && <link rel="preconnect" href={`https://${MEDIA_DOMAIN}`} />}
+
+  <!-- LCP image preload — starts the first stack images' fetches from the
+       head (fetchpriority on the img alone waits for the parser to reach it).
+       Only the first is high priority: preloading deep stack images would
+       compete with the LCP for mobile bandwidth. -->
+  {preloadImages?.slice(0, 2).map((src, i) => (
+    <link rel="preload" as="image" href={src} fetchpriority={i === 0 ? "high" : undefined} />
+  ))}
+
+  <!-- Meta Pixel — canonical base code, unmodified. fbevents.js ships its own
+       command queue: every fbq() call made before the library arrives (incl.
+       ViewContent/InitiateCheckout from product.ts) is buffered and flushed
+       automatically once it loads. Do not defer or custom-load it — a
+       hand-rolled loader delays or drops events whenever window.load or the
+       script fetch misbehaves. -->
+  {config.pixelId && (
+    <Fragment>
+      <script type="text/javascript" set:html={`
+!function(f,b,e,v,n,t,s)
+{if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+n.queue=[];t=b.createElement(e);t.async=!0;
+t.src=v;s=b.getElementsByTagName(e)[0];
+s.parentNode.insertBefore(t,s)}(window, document,'script',
+'https://connect.facebook.net/en_US/fbevents.js');
+fbq('init', '${config.pixelId}');
+fbq('track', 'PageView');
+      `} />
+      <noscript>
+        <img height="1" width="1" style="display:none"
+          src={`https://www.facebook.com/tr?id=${config.pixelId}&ev=PageView&noscript=1`}
+          alt=""
+        />
+      </noscript>
+    </Fragment>
+  )}
+
+  <!-- TikTok Pixel — canonical base code, unmodified. Fully independent from
+       the Meta Pixel above: loads only when a TikTok pixel id is configured,
+       tracks PageView under its own library (ttq), never sees Meta's pixel. -->
+  {config.tiktokPixelId && (
+    <Fragment>
+      <script type="text/javascript" set:html={`
+!function (w, d, t) {
+  w.TiktokAnalyticsObject=t;var ttq=w[t]=w[t]||[];ttq.methods=["page","track","identify","instances","debug","on","off","once","ready","alias","group","enableCookie","disableCookie","holdConsent","revokeConsent","grantConsent"];ttq.setAndDefer=function(t,e){t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))};};for(var i=0;i<ttq.methods.length;i++)ttq.setAndDefer(ttq,ttq.methods[i]);ttq.instance=function(t){for(var e=ttq._i[t]||[],n=0;n<ttq.methods.length;n++)ttq.setAndDefer(e,ttq.methods[n]);return e;};ttq.load=function(e,n){var r="https://analytics.tiktok.com/i18n/pixel/events.js",o=n&&n.partner;ttq._i=ttq._i||{},ttq._i[e]=[],ttq._i[e]._u=r,ttq._store=ttq._store||{},ttq._store[e]=o||{},ttq._st=ttq._st||{},ttq._st[e]=+new Date;var a=d.createElement("script");a.type="text/javascript",a.async=!0,a.src=r+"?sdkid="+e+"&lib="+t;var s=d.getElementsByTagName("script")[0];s.parentNode.insertBefore(a,s)};ttq.load('${config.tiktokPixelId}');ttq.page();
+}(window, document, 'ttq');
+      `} />
+    </Fragment>
+  )}
+
+  <!-- Dynamic theme tokens + Critical CSS -->
+  <style set:html={`
+    :root {
+      --clr-primary: ${primary};
+      --clr-accent:  ${accent};
+      --clr-bg:      ${bg};
+      --font-body:   ${font};
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+    }
+    /* Critical above-the-fold styles */
+    *, *::before, *::after { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html { scroll-behavior: smooth; height: -webkit-fill-available; }
+    body {
+      font-family: var(--font-body), "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+      background: var(--clr-bg);
+      color: var(--clr-text);
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      min-height: 100vh;
+      line-height: 1.5;
+      overflow-x: hidden;
+      margin: 0;
+    }
+  `} />
+</head>

@@ -1,0 +1,60 @@
+---
+// ── CUSTOMIZE HERE ────────────────────────────────────────────────────────────
+// Product detail page: image gallery, product info, order form.
+// To restyle the form, edit src/components/OrderForm.astro.
+// To restyle the gallery or product info, edit this file below the fence.
+// ─────────────────────────────────────────────────────────────────────────────
+import StoreLayout from "@/theme/layouts/StoreLayout.astro";
+import ProductDetailContent from "@/theme/components/product/ProductDetailContent.astro";
+import { getStoreContext } from "@/theme/config/store";
+import { actions } from "astro:actions";
+import { isInputError } from "astro:actions";
+
+const { slug } = Astro.params;
+
+// ── STREAMING OPTIMIZATION ──
+// Store context is fetched first (needed for layout)
+// Product data is fetched inside ProductDetailContent component
+// This allows layout/head/navigation to render immediately while product streams in
+const { config, content, isRTL } = await getStoreContext();
+
+// Action result (must be checked before rendering).
+// Order success → single PRG redirect to the thank-you page. The browser
+// follows the POST response directly (303), so the form page never re-renders
+// — no reload flash, no client-side redirect. The abandonment-conversion
+// signal fires on the thank-you page (sessionStorage survives the redirect).
+const result = Astro.getActionResult(actions.placeOrder);
+if (result?.data?.orderNumber) {
+  return Astro.redirect(
+    `/thank-you?order=${encodeURIComponent(result.data.orderNumber)}&total=${result.data.total}&oid=${encodeURIComponent(result.data.orderId ?? "")}`,
+    303,
+  );
+}
+const fieldErrors  = isInputError(result?.error) ? result.error.fields : {};
+const serverError  = result?.error && !isInputError(result.error) ? result.error.message : null;
+---
+
+<StoreLayout
+  config={config}
+  content={content}
+  title={`${config.name}`}
+  hideMobileNav={true}
+>
+  <!-- 
+    ProductDetailContent streams in after layout renders
+    This improves perceived performance by showing navigation/header immediately
+  -->
+  <ProductDetailContent
+    slug={slug!}
+    config={config}
+    content={content}
+    isRTL={isRTL}
+    fieldErrors={fieldErrors}
+    serverError={serverError}
+  />
+</StoreLayout>
+
+<script src="../../theme/scripts/product.ts"></script>
+<script src="../../theme/scripts/otp-step.ts"></script>
+<script src="../../theme/scripts/turnstile-field.ts"></script>
+<script src="../../theme/scripts/track-abandonment.ts"></script>
