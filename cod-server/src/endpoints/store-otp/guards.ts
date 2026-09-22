@@ -11,13 +11,15 @@
  * Interface: one async function returning the first tripped guard or null.
  */
 
+import type { KVLike } from "@/lib/kv";
+
 const PHONE_COOLDOWN_SECONDS = 60;
 const IP_HOURLY_LIMIT = 20;
 const IP_WINDOW_SECONDS = 3600;
 
 export interface OtpSendGuards {
   /** Returns { reason, windowSeconds } when the send should be blocked, else null. */
-  check(kv: KVNamespace | undefined, storeId: string, phone: string, ip: string | null): Promise<{ reason: string; windowSeconds: number } | null>;
+  check(kv: KVLike | undefined, storeId: string, phone: string, ip: string | null): Promise<{ reason: string; windowSeconds: number } | null>;
 }
 
 export function createOtpSendGuards(nowSeconds: number = Math.floor(Date.now() / 1000)): OtpSendGuards {
@@ -55,7 +57,7 @@ export function createOtpSendGuards(nowSeconds: number = Math.floor(Date.now() /
  * Fire-and-forget safe — errors are swallowed by contract.
  */
 export async function recordOtpSend(
-  kv: KVNamespace | undefined,
+  kv: KVLike | undefined,
   storeId: string,
   phone: string,
   ip: string | null,

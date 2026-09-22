@@ -32,7 +32,7 @@ export async function deleteCustomer(db: Database, customerId: string) {
     .select({ count: count() })
     .from(orders)
     .where(eq(orders.customerId, customerId))
-    .get();
+    .then((rows) => rows[0] ?? null);
 
   const orderCount = customerOrders?.count || 0;
 

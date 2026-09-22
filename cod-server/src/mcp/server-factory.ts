@@ -15,6 +15,7 @@ import { TOOL_SCHEMAS, TOOL_META, TOOL_OUTPUT_SCHEMAS } from "./schemas";
 import { TOOL_ANNOTATIONS } from "./annotations";
 import { TOOL_TITLES } from "./tool-titles";
 import { checkMcpRateLimit, readClientMeta, type ClientMeta } from "./request-context";
+import { kvFromEnv } from "@/lib/kv";
 import { executeMcpTool, redactForAudit, type McpActor } from "./execute-tool";
 import { getDb } from "@/db";
 import { ACTIONS, logActivity } from "@/lib/activity";
@@ -24,7 +25,7 @@ interface ToolRegistration {
   actor: McpActor;
   name: string;
   tool: Tool;
-  /** Worker env — reaches the RATE_LIMIT KV binding for the call-rate guard. */
+  /** Upstash-backed guard — reaches the shared KV for the call-rate guard. */
   env: Env;
   /** Rate-limit fallback identity when the client sends no subject hint. */
   fallbackSubject: string;
@@ -106,7 +107,7 @@ function registerTool(server: McpServer, registration: ToolRegistration): void {
       // Client hints (openai/subject, openai/session) — correlation only,
       // never authorization. Subject keys the per-user rate counter.
       const clientMeta = readClientMeta(ctx);
-      const rate = await checkMcpRateLimit(env.RATE_LIMIT, clientMeta.subject ?? fallbackSubject);
+      const rate = await checkMcpRateLimit(kvFromEnv(), clientMeta.subject ?? fallbackSubject);
       if (!rate.allowed) {
         await logActivity(
           db,

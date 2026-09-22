@@ -99,8 +99,8 @@ export async function dispatchToCompany(c: Context<AppContext>) {
 
   // Resolve French names from reference tables — used by both NOEST (commune text) and ZR Express (territory search keyword).
   const [wilayaRow, communeRow] = await Promise.all([
-    db.select({ name: wilayas.name }).from(wilayas).where(eq(wilayas.id, order.wilayaId)).get(),
-    db.select({ name: communes.name }).from(communes).where(eq(communes.id, order.communeId)).get(),
+    db.select({ name: wilayas.name }).from(wilayas).where(eq(wilayas.id, order.wilayaId)).then((rows) => rows[0] ?? null),
+    db.select({ name: communes.name }).from(communes).where(eq(communes.id, order.communeId)).then((rows) => rows[0] ?? null),
   ]);
 
   if (!wilayaRow || !communeRow) {
@@ -501,8 +501,8 @@ export async function bulkDispatch(c: Context<AppContext>) {
 
     // Resolve commune name for this order
     const [wilayaRow, communeRow] = await Promise.all([
-      db.select({ name: wilayas.name }).from(wilayas).where(eq(wilayas.id, order.wilayaId)).get(),
-      db.select({ name: communes.name }).from(communes).where(eq(communes.id, order.communeId)).get(),
+      db.select({ name: wilayas.name }).from(wilayas).where(eq(wilayas.id, order.wilayaId)).then((rows) => rows[0] ?? null),
+      db.select({ name: communes.name }).from(communes).where(eq(communes.id, order.communeId)).then((rows) => rows[0] ?? null),
     ]);
 
     if (!wilayaRow || !communeRow) {

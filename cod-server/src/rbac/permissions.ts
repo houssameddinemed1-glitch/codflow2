@@ -4,7 +4,7 @@
  * Database-backed permission validation service with caching.
  */
 
-import { DrizzleD1Database } from "drizzle-orm/d1";
+import type { AppDb } from "@/db";
 import { eq } from "drizzle-orm";
 import { userScopes } from "@/db/schema";
 import { hasPermission, hasAnyPermission, hasAllPermissions } from "../../../cod-shared/rbac/utils";
@@ -21,7 +21,7 @@ const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
  * @returns Array of scope strings
  */
 export async function getUserScopes(
-  db: DrizzleD1Database,
+  db: AppDb,
   userId: string
 ): Promise<string[]> {
   // Check cache first
@@ -62,7 +62,7 @@ export async function getUserScopes(
  * @returns true if user has permission
  */
 export async function checkPermission(
-  db: DrizzleD1Database,
+  db: AppDb,
   userId: string,
   userRole: "admin" | "staff",
   requiredScope: string
@@ -92,7 +92,7 @@ export async function checkPermission(
  * @returns true if user has any of the required permissions
  */
 export async function checkAnyPermission(
-  db: DrizzleD1Database,
+  db: AppDb,
   userId: string,
   userRole: "admin" | "staff",
   requiredScopes: string[]
@@ -122,7 +122,7 @@ export async function checkAnyPermission(
  * @returns true if user has all required permissions
  */
 export async function checkAllPermissions(
-  db: DrizzleD1Database,
+  db: AppDb,
   userId: string,
   userRole: "admin" | "staff",
   requiredScopes: string[]

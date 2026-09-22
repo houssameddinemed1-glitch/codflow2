@@ -24,7 +24,7 @@ export async function authMiddleware(c: Context<AppContext>, next: Next) {
   if (bearerMatch) {
     try {
       const payload = await verifySessionJwt(bearerMatch[1], c.env);
-      user = await db.select().from(users).where(eq(users.id, payload.sub)).get();
+      user = await db.select().from(users).where(eq(users.id, payload.sub)).then((rows) => rows[0] ?? null);
     } catch (err) {
       console.error("[auth] JWT verification failed:", err);
       return c.json({ 
@@ -34,7 +34,7 @@ export async function authMiddleware(c: Context<AppContext>, next: Next) {
       }, 401);
     }
   } else if (apiKey) {
-    user = await db.select().from(users).where(eq(users.apiKey, apiKey)).get();
+    user = await db.select().from(users).where(eq(users.apiKey, apiKey)).then((rows) => rows[0] ?? null);
   } else {
     return c.json({ 
       error: "Missing authorization", 

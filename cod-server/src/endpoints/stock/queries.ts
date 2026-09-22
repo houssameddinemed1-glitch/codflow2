@@ -83,7 +83,7 @@ export async function adjustStock(
       .select({ name: products.name })
       .from(products)
       .where(eq(products.id, productId))
-      .get();
+      .then((rows) => rows[0] ?? null);
 
     throw new BusinessLogicError(
       `Insufficient stock for ${productRow?.name ?? "product"}. Available: ${qtyBefore}, Required: ${Math.abs(delta)}`,

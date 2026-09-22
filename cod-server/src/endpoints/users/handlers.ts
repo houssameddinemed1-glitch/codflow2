@@ -95,7 +95,7 @@ export async function createUser(c: Context<AppContext>) {
   // 4. Check for duplicate email
   const { users: usersTable } = await import("@/db/schema");
   const { eq } = await import("drizzle-orm");
-  const existing = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, validated.email)).get();
+  const existing = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, validated.email)).then((rows) => rows[0] ?? null);
   if (existing) {
     throw new ConflictError(
       "A user with this email already exists",

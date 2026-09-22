@@ -11,7 +11,7 @@ import { getPixelConfig } from "../../../../cod-shared/queries/pixel-config";
 import { getTiktokConfig } from "../../../../cod-shared/queries/tiktok-config";
 import { resolveConversionForStage, getCapiWorkflowId } from "@/workflows/capi-helpers";
 import { resolveTiktokForStage, getTiktokWorkflowId } from "@/workflows/tiktok-conversion-model";
-import { stores } from "../../../../cod-shared/db/schema";
+import { stores } from "../../../../cod-shared/db/schema.pg";
 import { eq } from "drizzle-orm";
 
 export async function getStoreConfig(c: Context<AppContext>) {
@@ -238,7 +238,7 @@ export async function createStoreOrder(c: Context<AppContext>) {
             .select({ domain: stores.domain })
             .from(stores)
             .where(eq(stores.id, storeId))
-            .get();
+            .then((rows) => rows[0] ?? null);
         }
 
         let eventSourceUrl: string | undefined = storeRow?.domain
@@ -298,7 +298,7 @@ export async function createStoreOrder(c: Context<AppContext>) {
             .select({ domain: stores.domain })
             .from(stores)
             .where(eq(stores.id, storeId))
-            .get();
+            .then((rows) => rows[0] ?? null);
           if (tiktokStoreRow?.domain) {
             tiktokSourceUrl = `https://${tiktokStoreRow.domain}/thank-you`;
           }

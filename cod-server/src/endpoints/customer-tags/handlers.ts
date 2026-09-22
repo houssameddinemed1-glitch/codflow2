@@ -106,7 +106,7 @@ export async function assignTag(c: Context<AppContext>) {
     throw new NotFoundError("customer_tag", tagId);
   }
 
-  const customer = await db.select({ id: customers.id }).from(customers).where(eq(customers.id, customerId)).get();
+  const customer = await db.select({ id: customers.id }).from(customers).where(eq(customers.id, customerId)).then((rows) => rows[0] ?? null);
   if (!customer) {
     throw new NotFoundError("customer", customerId);
   }

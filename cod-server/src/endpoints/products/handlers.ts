@@ -169,7 +169,7 @@ async function deleteProductById(db: ReturnType<typeof getDb>, id: string, actor
   // Check if product has orders
   const { orderProducts } = await import("@/db/schema");
   const { eq } = await import("drizzle-orm");
-  const ordersWithProduct = await db.select().from(orderProducts).where(eq(orderProducts.productId, id)).get();
+  const ordersWithProduct = await db.select().from(orderProducts).where(eq(orderProducts.productId, id)).then((rows) => rows[0] ?? null);
   if (ordersWithProduct) {
     throw new BusinessLogicError(
       "Cannot delete product with existing orders",

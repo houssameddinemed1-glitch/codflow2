@@ -9,9 +9,7 @@
  * and read by the /api/mcp management endpoints.
  */
 
-import type { OAuthHelpers } from "@cloudflare/workers-oauth-provider";
-
-export type { OAuthHelpers };
+import type { KVLike } from "@/lib/kv";
 
 export const MCP_LAST_USED_PREFIX = "mcp-last-used:";
 
@@ -23,27 +21,30 @@ export function mcpLastUsedKey(userId: string, grantId: string): string {
 }
 
 export async function recordMcpLastUsed(
-  kv: KVNamespace,
+  kv: KVLike | undefined,
   userId: string,
   grantId: string,
 ): Promise<void> {
+  if (!kv) return;
   await kv.put(mcpLastUsedKey(userId, grantId), new Date().toISOString(), {
     expirationTtl: MCP_LAST_USED_TTL_SECONDS,
   });
 }
 
 export async function readMcpLastUsed(
-  kv: KVNamespace,
+  kv: KVLike | undefined,
   userId: string,
   grantId: string,
 ): Promise<string | null> {
+  if (!kv) return null;
   return kv.get(mcpLastUsedKey(userId, grantId));
 }
 
 export async function deleteMcpLastUsed(
-  kv: KVNamespace,
+  kv: KVLike | undefined,
   userId: string,
   grantId: string,
 ): Promise<void> {
+  if (!kv) return;
   await kv.delete(mcpLastUsedKey(userId, grantId));
 }

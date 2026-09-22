@@ -202,7 +202,7 @@ export async function assignDriver(c: Context<AppContext>) {
     .select({ id: drivers.id })
     .from(drivers)
     .where(eq(drivers.id, validated.driverId))
-    .get();
+    .then((rows) => rows[0] ?? null);
 
   if (!driver) {
     throw new NotFoundError("Driver", validated.driverId);

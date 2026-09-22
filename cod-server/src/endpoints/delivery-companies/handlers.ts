@@ -166,7 +166,7 @@ export async function syncCompanyStopDesks(c: Context<AppContext>) {
     // that don't begin with a parseable wilaya prefix). Provider adapters now
     // return null in those cases, but defend at the boundary too — one bad
     // row would otherwise abort the whole batch with FK constraint failed.
-    const validWilayaRows = await db.select({ id: wilayas.id }).from(wilayas).all();
+    const validWilayaRows = await db.select({ id: wilayas.id }).from(wilayas);
     const validWilayas = new Set(validWilayaRows.map((r) => r.id));
     const safeWilayaId = (wid: number | null | undefined) =>
       wid != null && validWilayas.has(wid) ? wid : null;
@@ -424,7 +424,7 @@ export async function fetchCompanyStopDesks(c: Context<AppContext>) {
     .from(companyStopDesks)
     .where(and(...conditions))
     .orderBy(companyStopDesks.name)
-    .all();
+    ;
 
   const desks = rows.map((r) => ({
     ...r,
@@ -462,7 +462,7 @@ export async function toggleCompanyStopDesk(c: Context<AppContext>) {
         eq(companyStopDesks.code, code),
       )
     )
-    .get();
+    .then((rows) => rows[0] ?? null);
 
   if (!existing) {
     throw new NotFoundError("Stop desk", `${companyId}/${code}`);
@@ -625,12 +625,12 @@ export async function listWebhookEvents(c: Context<AppContext>) {
       .orderBy(desc(webhookEvents.createdAt), desc(webhookEvents.id))
       .limit(limit)
       .offset(offset)
-      .all(),
+      ,
     db
       .select({ total: count() })
       .from(webhookEvents)
       .where(where)
-      .get(),
+      .then((rows) => rows[0] ?? null),
   ]);
 
   return c.json(

@@ -354,13 +354,13 @@ export const getOrderTools = (db: ReturnType<typeof getDb>) => ({
           .select({ id: customers.id })
           .from(customers)
           .where(eq(customers.id, parsed.data.customerId))
-          .get();
+          .then((rows) => rows[0] ?? null);
 
         if (!existingCustomer) {
           const [wilayaRow, communeRow] = await Promise.all([
-            db.select({ nameAr: wilayas.nameAr }).from(wilayas).where(eq(wilayas.id, parsed.data.wilayaId)).get(),
+            db.select({ nameAr: wilayas.nameAr }).from(wilayas).where(eq(wilayas.id, parsed.data.wilayaId)).then((rows) => rows[0] ?? null),
             parsed.data.communeId
-              ? db.select({ nameAr: communes.nameAr }).from(communes).where(eq(communes.id, parsed.data.communeId)).get()
+              ? db.select({ nameAr: communes.nameAr }).from(communes).where(eq(communes.id, parsed.data.communeId)).then((rows) => rows[0] ?? null)
               : Promise.resolve(null),
           ]);
           await db.insert(customers).values({
@@ -575,7 +575,7 @@ export const getOrderTools = (db: ReturnType<typeof getDb>) => ({
         const { drivers } = await import("@/db/schema");
         const { eq } = await import("drizzle-orm");
         const driver = await db.select({ id: drivers.id, firstName: drivers.firstName, lastName: drivers.lastName })
-          .from(drivers).where(eq(drivers.id, parsed.data.driverId)).get();
+          .from(drivers).where(eq(drivers.id, parsed.data.driverId)).then((rows) => rows[0] ?? null);
         if (!driver) {
           return { success: false, error: `Driver not found with ID: ${parsed.data.driverId}` };
         }

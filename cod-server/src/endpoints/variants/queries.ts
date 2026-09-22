@@ -46,7 +46,7 @@ async function assertSkuAvailable(
         ? and(eq(productVariants.sku, sku), ne(productVariants.id, excludeVariantId))
         : eq(productVariants.sku, sku),
     )
-    .get();
+    .then((rows) => rows[0] ?? null);
   if (clash) throw duplicateSkuError(sku);
 }
 

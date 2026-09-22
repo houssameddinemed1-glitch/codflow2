@@ -19,6 +19,8 @@
 
 /** Rolling window length and per-subject call budget. Generous on purpose —
  *  a ChatGPT pipeline polling several upload jobs stays far below it. */
+import type { KVLike } from "@/lib/kv";
+
 export const RATE_LIMIT_WINDOW_SECONDS = 60;
 export const RATE_LIMIT_MAX_CALLS = 200;
 
@@ -47,7 +49,7 @@ export type RateLimitResult =
  * security boundary; this guard only stops sustained flooding.
  */
 export async function checkMcpRateLimit(
-  kv: KVNamespace | undefined,
+  kv: KVLike | undefined,
   subject: string,
 ): Promise<RateLimitResult> {
   if (!kv) return { allowed: true };

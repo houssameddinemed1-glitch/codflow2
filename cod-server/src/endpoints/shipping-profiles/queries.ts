@@ -51,7 +51,7 @@ export async function updateProfile(
     .select()
     .from(shippingProfiles)
     .where(eq(shippingProfiles.id, id))
-    .get();
+    .then((rows) => rows[0] ?? null);
 
   if (!existing) return null;
 
@@ -62,7 +62,7 @@ export async function updateProfile(
       .select({ id: shippingProfiles.id })
       .from(shippingProfiles)
       .where(eq(shippingProfiles.isDefault, true))
-      .all();
+      ;
     if (otherDefaults.length <= 1) {
       throw new BusinessLogicError(
         "Cannot unset the last default shipping profile",
@@ -73,7 +73,7 @@ export async function updateProfile(
   }
 
   if (data.isDefault) {
-    await db.update(shippingProfiles).set({ isDefault: false }).run();
+    await db.update(shippingProfiles).set({ isDefault: false });
   }
 
   await db
@@ -85,7 +85,7 @@ export async function updateProfile(
       updatedAt: now(),
     })
     .where(eq(shippingProfiles.id, id))
-    .run();
+    ;
 
   return getProfileById(db, id);
 }
@@ -100,7 +100,7 @@ export async function setProfileRules(
     .select()
     .from(shippingProfiles)
     .where(eq(shippingProfiles.id, profileId))
-    .get();
+    .then((rows) => rows[0] ?? null);
 
   if (!existing) return null;
 
@@ -118,7 +118,7 @@ export async function setProfileRules(
     );
   }
 
-  await db.delete(shippingRules).where(eq(shippingRules.profileId, profileId)).run();
+  await db.delete(shippingRules).where(eq(shippingRules.profileId, profileId));
 
   const ts = now();
   for (const rule of data.rules) {
@@ -134,14 +134,14 @@ export async function setProfileRules(
         stopDeskEnabled: rule.stopDeskEnabled ?? false,
         createdAt: ts,
       })
-      .run();
+      ;
   }
 
   await db
     .update(shippingProfiles)
     .set({ updatedAt: now() })
     .where(eq(shippingProfiles.id, profileId))
-    .run();
+    ;
 
   return getProfileById(db, profileId);
 }

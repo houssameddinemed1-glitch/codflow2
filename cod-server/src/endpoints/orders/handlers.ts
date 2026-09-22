@@ -139,13 +139,13 @@ export async function createOrder(c: Context<AppContext>) {
       .select({ id: customers.id })
       .from(customers)
       .where(eq(customers.id, validated.customerId))
-      .get();
+      .then((rows) => rows[0] ?? null);
 
     if (!existingCustomer) {
       const [wilayaRow, communeRow] = await Promise.all([
-        db.select({ nameAr: wilayas.nameAr }).from(wilayas).where(eq(wilayas.id, validated.wilayaId)).get(),
+        db.select({ nameAr: wilayas.nameAr }).from(wilayas).where(eq(wilayas.id, validated.wilayaId)).then((rows) => rows[0] ?? null),
         validated.communeId
-          ? db.select({ nameAr: communes.nameAr }).from(communes).where(eq(communes.id, validated.communeId)).get()
+          ? db.select({ nameAr: communes.nameAr }).from(communes).where(eq(communes.id, validated.communeId)).then((rows) => rows[0] ?? null)
           : Promise.resolve(null),
       ]);
 
@@ -172,7 +172,7 @@ export async function createOrder(c: Context<AppContext>) {
           .select({ id: customers.id })
           .from(customers)
           .where(eq(customers.phone, validated.phone))
-          .get();
+          .then((rows) => rows[0] ?? null);
         if (!byPhone) throw err;
         customerId = byPhone.id;
       }

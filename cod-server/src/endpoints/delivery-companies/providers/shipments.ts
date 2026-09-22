@@ -64,7 +64,7 @@ export async function getShipmentByOrder(db: AppDb, orderId: string) {
     .from(companyShipments)
     .where(eq(companyShipments.orderId, orderId))
     .orderBy(desc(companyShipments.createdAt))
-    .get();
+    .then((rows) => rows[0] ?? null);
 }
 
 // ─── API Logs ─────────────────────────────────────────────────────────────────

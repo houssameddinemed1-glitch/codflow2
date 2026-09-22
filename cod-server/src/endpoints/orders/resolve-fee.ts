@@ -10,8 +10,7 @@
  */
 
 import { eq, and } from "drizzle-orm";
-import type { DrizzleD1Database } from "drizzle-orm/d1";
-import type * as schema from "@/db/schema";
+import type { AppDb } from "@/db";
 import {
   shippingProfiles,
   shippingRules,
@@ -22,7 +21,7 @@ import {
 import { BusinessLogicError } from "@/lib/errors/classes";
 import { ERROR_CODES } from "../../../../cod-shared/errors/codes";
 
-type DB = DrizzleD1Database<typeof schema>;
+type DB = AppDb;
 
 export interface ResolveFeeInput {
   wilayaId: number;
@@ -67,14 +66,14 @@ export async function resolveDeliveryFee(
       .select({ shippingProfileId: products.shippingProfileId })
       .from(products)
       .where(eq(products.id, productIds[0]))
-      .get();
+      .then((rows) => rows[0] ?? null);
 
     if (productRow?.shippingProfileId) {
       const profile = await db
         .select({ id: shippingProfiles.id })
         .from(shippingProfiles)
         .where(eq(shippingProfiles.id, productRow.shippingProfileId))
-        .get();
+        .then((rows) => rows[0] ?? null);
       if (profile) {
         profileId = profile.id;
       }
@@ -87,7 +86,7 @@ export async function resolveDeliveryFee(
       .select({ id: shippingProfiles.id })
       .from(shippingProfiles)
       .where(eq(shippingProfiles.isDefault, true))
-      .get();
+      .then((rows) => rows[0] ?? null);
     if (defaultProfile) {
       profileId = defaultProfile.id;
     }
@@ -114,7 +113,7 @@ export async function resolveDeliveryFee(
         eq(shippingRules.wilayaId, wilayaId),
       ),
     )
-    .get();
+    .then((rows) => rows[0] ?? null);
 
   if (!wilayaRule) {
     throw new BusinessLogicError(
@@ -147,7 +146,7 @@ export async function resolveDeliveryFee(
           eq(shippingRuleCommunes.communeId, communeId),
         ),
       )
-      .get();
+      .then((rows) => rows[0] ?? null);
 
     if (communeOverride) {
       // NULL = inherit from wilaya rule
@@ -213,7 +212,7 @@ export async function applyFreeShippingOffer(
           eq(offers.status, "active"),
         ),
       )
-      .get();
+      .then((rows) => rows[0] ?? null);
 
     if (offer) {
       const qty = productQuantities.get(productId) ?? 0;

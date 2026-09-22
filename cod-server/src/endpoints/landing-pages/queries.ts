@@ -31,7 +31,7 @@ export async function createLandingPage(db: AppDb, data: CreateLandingPageData) 
     .select({ id: products.id })
     .from(products)
     .where(eq(products.id, data.productId))
-    .get();
+    .then((rows) => rows[0] ?? null);
   if (!product) {
     throw new NotFoundError("Product", data.productId);
   }

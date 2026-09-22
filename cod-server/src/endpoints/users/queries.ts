@@ -126,7 +126,7 @@ export async function grantScope(
     .select()
     .from(userScopes)
     .where(and(eq(userScopes.userId, userId), eq(userScopes.scope, scope)))
-    .get();
+    .then((rows) => rows[0] ?? null);
 
   if (existing) {
     throw new Error("Scope already granted to user");

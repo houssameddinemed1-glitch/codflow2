@@ -1,5 +1,30 @@
+import { getPgDb, type PgDb } from "../../../cod-shared/db/client.pg";
+
+export type { PgDb };
 /**
- * Drizzle factory re-exported from cod-shared/db/client so cod-server and
- * cod-client-astro bind to the same D1 instance with the same schema.
+ * Historical alias: endpoint code was written against `AppDb` (D1). On the
+ * Vercel stack it is the Postgres database — same name, new engine.
  */
-export * from "../../../cod-shared/db/client";
+export type AppDb = PgDb;
+
+let cached: PgDb | null = null;
+
+/**
+ * Returns the shared Postgres client. The optional argument preserves every
+ * existing `getDb(c.env.DB)` call site — the D1 handle is simply ignored.
+ */
+export function getDb(_d1?: unknown): PgDb {
+  if (!cached) {
+    const url = process.env.DATABASE_URL;
+    if (!url) {
+      throw new Error("DATABASE_URL is not set — connect Vercel Postgres (or set it locally)");
+    }
+    cached = getPgDb(url);
+  }
+  return cached;
+}
+
+/** Test seam: reset the cached client between tests. */
+export function resetDbCache(): void {
+  cached = null;
+}

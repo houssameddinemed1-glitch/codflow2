@@ -33,7 +33,7 @@ export async function storeAuthMiddleware(c: Context<AppContext>, next: Next) {
       .select()
       .from(storeApiKeys)
       .where(eq(storeApiKeys.keyHash, keyHash))
-      .get();
+      .then((rows) => rows[0] ?? null);
 
     if (!record) {
       return c.json({ error: "Invalid store API key" }, 401);
@@ -45,7 +45,6 @@ export async function storeAuthMiddleware(c: Context<AppContext>, next: Next) {
     db.update(storeApiKeys)
       .set({ lastUsedAt: new Date().toISOString() })
       .where(eq(storeApiKeys.id, record.id))
-      .run()
       .catch(() => {});
 
     await next();

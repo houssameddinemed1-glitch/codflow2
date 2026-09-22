@@ -42,7 +42,7 @@ export async function deleteDriver(db: Database, driverId: string) {
         or(eq(orders.status, "assigned"), eq(orders.status, "out_for_delivery")),
       ),
     )
-    .get();
+    .then((rows) => rows[0] ?? null);
 
   if (activeOrders && activeOrders.count > 0) {
     throw new ConflictError(

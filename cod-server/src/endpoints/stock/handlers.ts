@@ -30,7 +30,7 @@ export async function adjustProductStock(c: Context<AppContext>) {
     ...body,
   });
 
-  const productRow = await db.select({ name: products.name }).from(products).where(eq(products.id, productId)).get();
+  const productRow = await db.select({ name: products.name }).from(products).where(eq(products.id, productId)).then((rows) => rows[0] ?? null);
   await logActivity(db, actor, ACTIONS.STOCK_ADJUSTED, {
     type: "stock",
     id: productId,
@@ -56,7 +56,7 @@ export async function adjustVariantStock(c: Context<AppContext>) {
     ...body,
   });
 
-  const productRow = await db.select({ name: products.name }).from(products).where(eq(products.id, productId)).get();
+  const productRow = await db.select({ name: products.name }).from(products).where(eq(products.id, productId)).then((rows) => rows[0] ?? null);
   await logActivity(db, actor, ACTIONS.STOCK_ADJUSTED, {
     type: "stock",
     id: productId,

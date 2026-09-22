@@ -77,7 +77,7 @@ export async function updateShipmentInfo(c: Context<AppContext>) {
 
   // Resolve French commune name — required by Packers on every update call.
   const communeRow = order.communeId
-    ? await db.select({ name: communes.name }).from(communes).where(eq(communes.id, order.communeId)).get()
+    ? await db.select({ name: communes.name }).from(communes).where(eq(communes.id, order.communeId)).then((rows) => rows[0] ?? null)
     : null;
 
   const bodyData: any = (c.req as any).valid?.("json");

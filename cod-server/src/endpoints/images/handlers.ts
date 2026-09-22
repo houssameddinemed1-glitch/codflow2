@@ -171,7 +171,7 @@ export async function listProductImages(c: Context<AppContext>) {
     .from(productImages)
     .where(eq(productImages.productId, productId))
     .orderBy(productImages.position)
-    .all();
+    ;
 
   return c.json({ success: true, data: images }, 200);
 }
@@ -206,7 +206,7 @@ export async function saveProductImage(c: Context<AppContext>) {
     .select()
     .from(productImages)
     .where(eq(productImages.productId, productId))
-    .all();
+    ;
 
   const position =
     body.position ??
@@ -274,7 +274,7 @@ export async function reorderProductImages(c: Context<AppContext>) {
     .select({ id: productImages.id })
     .from(productImages)
     .where(eq(productImages.productId, productId))
-    .all();
+    ;
 
   const existingIds = new Set(existing.map((img) => img.id));
 
@@ -308,7 +308,7 @@ export async function reorderProductImages(c: Context<AppContext>) {
     .from(productImages)
     .where(eq(productImages.productId, productId))
     .orderBy(asc(productImages.position))
-    .all();
+    ;
 
   return c.json({ success: true, data: updated }, 200);
 }
@@ -327,7 +327,7 @@ export async function deleteProductImage(c: Context<AppContext>) {
     .select()
     .from(productImages)
     .where(and(eq(productImages.id, imageId), eq(productImages.productId, productId)))
-    .get();
+    .then((rows) => rows[0] ?? null);
 
   if (!image) {
     throw new NotFoundError("Image", imageId);
