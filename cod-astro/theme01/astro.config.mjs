@@ -1,5 +1,5 @@
 import { defineConfig, envField, passthroughImageService } from "astro/config";
-import cloudflare from "@astrojs/cloudflare";
+import vercel from "@astrojs/vercel";
 import tailwindcss from "@tailwindcss/vite";
 import compress from "@playform/compress";
 import icon from "astro-icon";
@@ -8,9 +8,7 @@ export default defineConfig({
   output: "server",
   compressHTML: true,
   session: false,
-  adapter: cloudflare({
-    imageService: "passthrough",
-  }),
+  adapter: vercel(),
   env: {
     schema: {
       STORE_API_KEY: envField.string({

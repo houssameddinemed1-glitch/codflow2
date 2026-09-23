@@ -1,13 +1,16 @@
 #!/usr/bin/env node
 /**
- * Deploy the storefront worker with COD_SERVER_URL injected from the unified
- * root .env (COD_SERVER_URL) — see cod-server/scripts/cloud-env.mjs.
- * STORE_API_KEY is a worker secret, set separately via `wrangler secret put`.
+ * Deploy the storefront to Vercel (project codflow-store).
+ *
+ * Runtime config is plain Vercel project env — set once in the dashboard
+ * (or via `vercel env add`):
+ *   STORE_API_KEY  — must match the key_hash seeded into Neon (store_api_keys)
+ *   COD_SERVER_URL — deployed cod-server origin (https://codflow-api.vercel.app)
+ *   MEDIA_DOMAIN   — optional; unset passes image URLs through unchanged
  *
  * COD_SERVER_URL defaults to http://localhost:8787 so `npm run dev` works out
- * of the box. A deployed Worker can never reach that address, so shipping it
- * produces a storefront whose every API call fails. Deployment is refused when
- * the value resolves to localhost unless --force-local is passed.
+ * of the box. A deployed storefront can never reach that address, so this
+ * script refuses a loopback value unless --force-local is passed.
  *
  * Usage:
  *   npm run deploy
@@ -15,22 +18,14 @@
  */
 
 import { execSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
-import { getCloudEnv } from "../../../cod-server/scripts/cloud-env.mjs";
 
-const forceLocal = process.argv.includes("--force-local");
-const { serverUrl } = getCloudEnv();
-const themeDir = join(dirname(fileURLToPath(import.meta.url)), "..");
-
-/** Loopback hosts a deployed Worker can never reach. */
+/** Loopback hosts a deployed storefront can never reach. */
 function isLoopbackUrl(value) {
   let hostname;
   try {
     ({ hostname } = new URL(value));
   } catch {
-    return false; // not a URL — let wrangler report it
+    return false; // not a URL — let the build/runtime report it
   }
   return (
     hostname === "localhost" ||
@@ -42,18 +37,21 @@ function isLoopbackUrl(value) {
   );
 }
 
+const forceLocal = process.argv.includes("--force-local");
+const serverUrl = process.env.COD_SERVER_URL ?? "http://localhost:8787";
+
 if (isLoopbackUrl(serverUrl) && !forceLocal) {
   console.error(`
 Error: COD_SERVER_URL resolves to a local address (${serverUrl}).
 
-A deployed Worker cannot reach your machine, so this would ship a storefront
-whose every API call fails.
+A deployed storefront cannot reach your machine, so this would ship a
+storefront whose every API call fails.
 
-Set the deployed cod-server origin in <repo-root>/.env:
+Set the deployed cod-server origin as a Vercel project env var:
 
-  COD_SERVER_URL=https://api.yourdomain.com
+  vercel env add COD_SERVER_URL production
 
-See <repo-root>/.env.example for the full template, then re-run:
+Then re-run:
 
   npm run deploy
 
@@ -68,35 +66,4 @@ if (forceLocal && isLoopbackUrl(serverUrl)) {
   console.warn(`Warning: deploying with a local COD_SERVER_URL (${serverUrl}) — --force-local was passed.`);
 }
 
-// Worker-to-worker fetch over *.workers.dev is blocked by Cloudflare (1042),
-// so the storefront calls cod-server through a service binding. The binding
-// target is install-specific, so it is injected here at deploy time from
-// cod-server/wrangler.toml — never committed to wrangler.jsonc.
-const serverToml = readFileSync(join(themeDir, "..", "..", "cod-server", "wrangler.toml"), "utf8");
-const serverName = serverToml.match(/^name\s*=\s*"([^"]+)"/m)?.[1];
-if (!serverName) {
-  console.error("Error: could not read worker name from cod-server/wrangler.toml.");
-  process.exit(1);
-}
-const configPath = join(themeDir, "wrangler.jsonc");
-const baseJsonc = readFileSync(configPath, "utf8");
-// Swap the services binding into wrangler.jsonc in place (a separate
-// --config file breaks the adapter's entry-point resolution), then restore.
-const mergedJsonc = baseJsonc.replace(
-  /"observability":\s*\{\s*"enabled":\s*true\s*\}/,
-  `"observability": { "enabled": true }, "services": [ { "binding": "COD_SERVER", "service": "${serverName}" } ]`
-);
-if (mergedJsonc === baseJsonc) {
-  console.error("Error: could not inject services binding into wrangler.jsonc.");
-  process.exit(1);
-}
-writeFileSync(configPath, mergedJsonc);
-try {
-  execSync("npm run build", { stdio: "inherit", cwd: themeDir });
-  execSync(`npx wrangler deploy --var COD_SERVER_URL:${serverUrl}`, {
-    stdio: "inherit",
-    cwd: themeDir,
-  });
-} finally {
-  writeFileSync(configPath, baseJsonc);
-}
+execSync("vercel deploy --prod", { stdio: "inherit" });

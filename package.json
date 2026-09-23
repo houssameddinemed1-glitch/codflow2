@@ -1,7 +1,7 @@
 {
   "name": "codflow",
   "private": true,
-  "description": "CodFlow — COD e-commerce platform monorepo (Cloudflare Workers + Astro + D1).",
+  "description": "CodFlow — COD e-commerce platform monorepo (Vercel + Postgres + Astro).",
   "workspaces": [
     "cod-shared",
     "cod-server",
@@ -13,5 +13,8 @@
   },
   "overrides": {
     "vite": "^8.2.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0"
   }
 }

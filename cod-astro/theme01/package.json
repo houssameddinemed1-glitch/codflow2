@@ -5,9 +5,8 @@
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
-    "preview": "astro build && wrangler dev",
-    "deploy": "node scripts/deploy.mjs",
-    "cf-typegen": "wrangler types --env-interface CloudflareEnv src/env.d.ts",
+    "preview": "astro preview",
+    "deploy": "vercel deploy --prod",
     "test": "vitest --run",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
@@ -17,7 +16,7 @@
     "validate": "npm run validate:all && npm run build"
   },
   "dependencies": {
-    "@astrojs/cloudflare": "^14.3.1",
+    "@astrojs/vercel": "^11.0.0",
     "@iconify-json/heroicons": "^1.2.3",
     "@playform/compress": "^0.2.5",
     "astro": "^7.3.2",
@@ -31,7 +30,6 @@
     "happy-dom": "^20.9.0",
     "tailwindcss": "^4.0.0",
     "typescript": "^7.0.2",
-    "vitest": "^5.0.0",
-    "wrangler": "^4.125.0"
+    "vitest": "^5.0.0"
   }
 }

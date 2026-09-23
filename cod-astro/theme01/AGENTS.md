@@ -1,7 +1,7 @@
 # theme01 — repository instructions for coding agents
 
 `cod-astro/theme01` is the swappable storefront theme for CodFlow (Astro,
-Cloudflare Workers, AR/FR/EN). It is a **theme layer, not a platform package**:
+Vercel, AR/FR/EN). It is a **theme layer, not a platform package**:
 engine logic lives in the CodFlow platform (see `cod-server`). Read the root
 `AGENTS.md` too — this file only overrides what differs here.
 
@@ -51,10 +51,10 @@ tests for cod-server, cod-client-astro, and the legacy cod-client).
   load-bearing: it keeps a single Vite major across astro/vitest/plugins.
   Removing it reintroduces a dev-server boot crash; bump it together with
   astro's Vite major. `npm ls vite` must show one version.
-- `COD_SERVER_URL` is never set in `wrangler.jsonc` — `npm run deploy`
-  (scripts/deploy.mjs) injects it at deploy time from the repo-root `.env`
-  and refuses a localhost value without `--force-local`. Local dev reads it
-  from this package's `.dev.vars`. Real secrets go in `.dev.vars` (gitignored)
-  or `wrangler secret put` — never in `wrangler.jsonc`.
+- `COD_SERVER_URL` is never hardcoded — `npm run deploy`
+  (`scripts/deploy.mjs`) refuses a localhost value without `--force-local`.
+  Runtime config is Vercel project env (`vercel env add`); local dev reads
+  this package's `.dev.vars`. Real secrets go in `.dev.vars` (gitignored)
+  or Vercel project env — never in `wrangler.jsonc`.
 - `MEDIA_DOMAIN` is optional; unset, the image optimizer passes URLs through
   unchanged.

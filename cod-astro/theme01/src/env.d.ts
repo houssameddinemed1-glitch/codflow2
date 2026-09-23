@@ -1,22 +1,8 @@
 /// <reference path="../.astro/types.d.ts" />
 /// <reference types="astro/client" />
 
-interface CloudflareEnv {
-  /** Raw store API key — set as a Cloudflare secret */
-  STORE_API_KEY: string;
-  /** Base URL of cod-server (e.g. https://api.yourdomain.com). Local: http://localhost:8787 */
-  COD_SERVER_URL: string;
-  /** Optional media/CDN domain serving R2 images (e.g. media.yourdomain.com) — used by the image optimizer */
-  MEDIA_DOMAIN?: string;
-  /** Service binding to cod-server (injected at deploy time; bypasses the workers.dev 1042 block) */
-  COD_SERVER?: { fetch: (req: Request) => Promise<Response> };
-}
-
-type Runtime = import("@astrojs/cloudflare").Runtime<CloudflareEnv>;
-
-declare namespace App {
-  interface Locals extends Runtime {}
-}
+// Vercel runtime: server secrets come from astro:env/server, backed by plain
+// environment variables (see astro.config.mjs env.schema). No worker bindings.
 
 interface SelectOption {
   value: string;

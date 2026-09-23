@@ -21,11 +21,11 @@ Workers that make up the platform:
 - Abandoned-order tracking (`POST /store/abandoned`) with the Meta Pixel
 - Three locale packs: **Arabic, French, English** (RTL-first, default Arabic)
 - Partner-overridable design tokens (colors, font) injected at request time
-- Cloudflare Image Resizing optimization for R2 images (`MEDIA_DOMAIN`)
+- Cloudflare Image Resizing optimization for Blob images (`MEDIA_DOMAIN`)
 
 ## Quick start
 
-Prereqs: Node 22.12+, the [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/),
+Prereqs: Node 22.12+, the [Vercel CLI](https://vercel.com/docs/cli),
 and a running `cod-server` (the storefront reads all data from its `/store/*` API).
 
 ```bash
@@ -42,13 +42,13 @@ npm run dev                      # http://localhost:4321
 ## Environment variables
 
 Defined in `astro.config.mjs` → `env.schema`, read from `.dev.vars` locally and
-`wrangler secret put` in production.
+Vercel project env in production (`vercel env add`).
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
-| `STORE_API_KEY` | yes | Per-store key sent as `X-Store-API-Key` to the `/store/*` API. Must match the key seeded into D1 (dev default: `codflow-dev-store-key`). |
-| `COD_SERVER_URL` | yes | Base URL of the `cod-server` Worker (dev: `http://localhost:8787`). |
-| `MEDIA_DOMAIN` | no | Media/CDN domain serving R2 images (no scheme). Unset → the image optimizer passes original URLs through unchanged. |
+| `STORE_API_KEY` | yes | Per-store key sent as `X-Store-API-Key` to the `/store/*` API. Must match the key seeded into Neon (`store_api_keys`). |
+| `COD_SERVER_URL` | yes | Base URL of the `cod-server` API (dev: `http://localhost:8787`, prod: `https://codflow-api.vercel.app`). |
+| `MEDIA_DOMAIN` | no | Media/CDN domain serving Blob images (no scheme). Unset → the image optimizer passes original URLs through unchanged. |
 
 ## Scripts
 
@@ -56,13 +56,12 @@ Defined in `astro.config.mjs` → `env.schema`, read from `.dev.vars` locally an
 |--------|--------------|
 | `npm run dev` | Astro dev server on `http://localhost:4321` |
 | `npm run build` | Production build (`astro build`) |
-| `npm run preview` | Build, then run the Worker locally via `wrangler dev` |
-| `npm run deploy` | Deploy to Cloudflare Workers (`wrangler deploy`) |
+| `npm run preview` | Build, then preview locally (`astro preview`) |
+| `npm run deploy` | Deploy to Vercel (`vercel deploy --prod`) |
 | `npm test` | Vitest unit/property tests (`fast-check`) |
 | `npm run validate:strings` | Check for hardcoded user-facing strings in components |
 | `npm run validate:styles` | Check for hardcoded colors/radii/fonts in component styles |
 | `npm run validate:all` | Both validators, then `astro build` |
-| `npm run cf-typegen` | Regenerate `src/env.d.ts` from `wrangler.jsonc` |
 
 ## Project structure
 
@@ -97,15 +96,14 @@ inventory.
 
 ```bash
 cd cod-astro/theme01
-npm run build && npm run deploy
-wrangler secret put STORE_API_KEY     # the key your backend issues
-wrangler secret put COD_SERVER_URL    # your deployed backend URL
+vercel env add STORE_API_KEY production     # the key your backend issues
+vercel env add COD_SERVER_URL production    # your deployed backend URL
 # optional:
-wrangler secret put MEDIA_DOMAIN      # media.yourdomain.com
+vercel env add MEDIA_DOMAIN production      # media.yourdomain.com
+npm run deploy
 ```
 
-`wrangler.jsonc` ships a local `COD_SERVER_URL` var — replace it before
-deploying. Never put real secrets in `wrangler.jsonc`.
+Never put real secrets in `wrangler.jsonc` (kept only as a local-dev reference).
 
 ## Documentation
 
