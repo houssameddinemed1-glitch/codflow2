@@ -33,6 +33,12 @@ const hexColor = z.string().regex(/^#[0-9a-fA-F]{3,8}$/, "Invalid hex color");
 const updateStoreBodySchema = z.object({
   name: z.string().min(1).max(100).optional(),
   logoUrl: z.string().url().nullable().optional(),
+  domain: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/i, "Domain must be a hostname like store.example.com")
+    .max(200)
+    .nullable()
+    .optional(),
   primaryColor: hexColor.optional(),
   accentColor: hexColor.optional(),
   bgColor: hexColor.optional(),
