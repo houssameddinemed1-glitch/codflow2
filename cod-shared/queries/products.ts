@@ -4,8 +4,6 @@ import type { PgDb } from "../db/client.pg";
 import { safeLikeTerm } from "./search";
 import { sanitizeRichText } from "../lib/sanitize-html";
 
-type BatchStatement = Parameters<PgDb["batch"]>[0][number];
-
 export interface VariantOption {
   name: string;
   values: { value: string; hexColor?: string | null }[];

@@ -106,7 +106,6 @@ export {
   StockOverviewSchema,
   OfferSchema,
   UploadedImageSchema,
-  PresignedUploadSchema,
 } from "./schemas/products";
 
 // ─── Landing Pages ────────────────────────────────────────────────────────────

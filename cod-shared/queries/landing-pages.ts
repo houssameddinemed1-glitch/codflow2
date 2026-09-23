@@ -10,6 +10,7 @@ import { eq, desc, and, sql, isNull, count } from "drizzle-orm";
 import {
   landingPages,
   landingPageImages,
+  lpImageUploadJobs,
   orders,
   products,
   stores,
@@ -219,8 +220,6 @@ export async function getLandingPageById(db: PgDb, id: string) {
       : { views: 0, orders: 0, revenue: 0 },
   };
 }
-
-type BatchStatement = Parameters<PgDb["batch"]>[0][number];
 
 /**
  * Full LP detail by slug in TWO round trips (the public render path):
@@ -619,4 +618,69 @@ export function buildLandingPagePublicUrl(
   slug: string,
 ): string {
   return baseUrl ? `${baseUrl}/lp/${slug}` : `/lp/${slug}`;
+}
+
+export interface LpImageUploadJobResult {
+  imageId: string;
+  src: string;
+  position: number | null;
+  width: number | null;
+  height: number | null;
+  altText: string | null;
+}
+
+/** Insert a `processing` upload job row. Id is the `lpimg-<hex>` job id. */
+export async function createLpImageUploadJob(
+  db: PgDb,
+  job: { id: string; landingPageId: string; r2Key: string },
+): Promise<void> {
+  const now = new Date().toISOString();
+  await db.insert(lpImageUploadJobs).values({
+    id: job.id,
+    landingPageId: job.landingPageId,
+    r2Key: job.r2Key,
+    status: "processing",
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
+export async function getLpImageUploadJob(db: PgDb, id: string) {
+  return db
+    .select()
+    .from(lpImageUploadJobs)
+    .where(eq(lpImageUploadJobs.id, id))
+    .then((rows) => rows[0] ?? null);
+}
+
+export async function markLpImageUploadComplete(
+  db: PgDb,
+  id: string,
+  result: LpImageUploadJobResult,
+): Promise<void> {
+  await db
+    .update(lpImageUploadJobs)
+    .set({
+      status: "complete",
+      error: null,
+      imageId: result.imageId,
+      src: result.src,
+      position: result.position,
+      width: result.width,
+      height: result.height,
+      altText: result.altText,
+      updatedAt: new Date().toISOString(),
+    })
+    .where(eq(lpImageUploadJobs.id, id));
+}
+
+export async function markLpImageUploadFailed(
+  db: PgDb,
+  id: string,
+  error: string,
+): Promise<void> {
+  await db
+    .update(lpImageUploadJobs)
+    .set({ status: "failed", error, updatedAt: new Date().toISOString() })
+    .where(eq(lpImageUploadJobs.id, id));
 }

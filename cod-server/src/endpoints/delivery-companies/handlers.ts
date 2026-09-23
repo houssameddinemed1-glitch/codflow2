@@ -214,11 +214,10 @@ export async function syncCompanyStopDesks(c: Context<AppContext>) {
     const BATCH_SIZE = 50;
     for (let i = 0; i < upsertStatements.length; i += BATCH_SIZE) {
       const chunk = upsertStatements.slice(i, i + BATCH_SIZE);
-      // Drizzle's batch() requires a non-empty tuple; skip the call if empty
-      // (unreachable given the outer guard, but keeps TS happy).
-      if (chunk.length > 0) {
-        await db.batch(chunk as [typeof chunk[0], ...typeof chunk]);
-      }
+      // Independent rows — parallelize within the chunk. (D1's db.batch ran
+      // them sequentially; pg has no batch API. Awaiting each builder
+      // executes it.)
+      await Promise.all(chunk);
     }
 
     // ── Stale-desk cleanup ──────────────────────────────────────────────────

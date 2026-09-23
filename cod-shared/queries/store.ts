@@ -183,7 +183,6 @@ export async function getStoreProducts(
 
   type ImageRow = typeof productImages.$inferSelect;
   type InventoryRow = { productId: string; total: number };
-  type BatchStatement = Parameters<PgDb["batch"]>[0][number];
 
   const statements = [...imageStatements, ...inventoryStatements];
   const batchResults = (await Promise.all(

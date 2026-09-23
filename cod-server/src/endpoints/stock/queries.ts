@@ -31,8 +31,6 @@ export type {
 
 import type { StockMovementRow } from "../../../../cod-shared/queries/stock";
 
-type BatchStatement = Parameters<AppDb["batch"]>[0][number];
-
 /** Movement types whose semantics fix the delta's sign. */
 const TYPE_SIGN: Record<string, number> = {
   PURCHASE: 1,
@@ -132,23 +130,24 @@ export async function adjustStock(
             ),
           );
 
-  await db.batch([
-    db.insert(stockMovements).values({
-      id: movementId,
-      productId,
-      variantId: variantId ?? null,
-      type,
-      delta,
-      qtyBefore: sql`(SELECT ${inventoryColumn} ${guard})`,
-      qtyAfter: sql`(SELECT ${inventoryColumn} + ${delta} ${guard})`,
-      reason: reason ?? null,
-      reference: reference ?? null,
-      createdBy,
-      createdByName,
-      createdAt: now,
-    }),
-    guardedUpdate,
-  ] as [BatchStatement, ...BatchStatement[]]);
+  // Sequential, in this order: the movement insert's subselects read
+  // pre-update state, then the guarded UPDATE applies the delta. (D1's
+  // db.batch executed statements sequentially; Promise.all would race them.)
+  await db.insert(stockMovements).values({
+    id: movementId,
+    productId,
+    variantId: variantId ?? null,
+    type,
+    delta,
+    qtyBefore: sql`(SELECT ${inventoryColumn} ${guard})`,
+    qtyAfter: sql`(SELECT ${inventoryColumn} + ${delta} ${guard})`,
+    reason: reason ?? null,
+    reference: reference ?? null,
+    createdBy,
+    createdByName,
+    createdAt: now,
+  });
+  await guardedUpdate;
 
   const { inventory: currentInventory } = await getProductInventory(db, productId, variantId ?? null);
 

@@ -101,8 +101,6 @@ export async function resolveCarrierCommuneName(
   return row?.carrierName ?? null;
 }
 
-type BatchStatement = Parameters<PgDb["batch"]>[0][number];
-
 /**
  * Full geo sync for one carrier: exact-match, then normalized, then
  * near-variant (distance ≤ 1, same wilaya) matching of the carrier's

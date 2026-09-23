@@ -42,7 +42,10 @@ export const userScopes = pgTable("user_scopes", {
 export const customers = pgTable("customers", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
-  phone: text("phone").notNull(),
+  /** UNIQUE — closes the duplicate-customer race; findOrCreateCustomer's
+      INSERT ... ON CONFLICT(phone) path is the single serialized entry point
+      (mirrors D1 migration 0015). */
+  phone: text("phone").notNull().unique(),
   phone2: text("phone2"),
   /** Wilaya FK — authority for wilaya. Kept in sync with `wilaya` text column. */
   wilayaId: integer("wilaya_id").references(() => wilayas.id),
@@ -883,6 +886,35 @@ export const landingPageImages = pgTable("landing_page_images", {
   width: integer("width"),
   height: integer("height"),
   createdAt: text("created_at").notNull(),
+});
+
+export const lpImageUploadJobStatusEnum = pgEnum("lp_image_upload_job_status", ["processing", "complete", "failed"]);
+
+/**
+ * Background landing-page AI image uploads (QStash-driven).
+ *
+ * The upload tool inserts a `processing` row and publishes the payload to
+ * QStash; the runner flips it to `complete` (with the image record) or
+ * `failed` (with the recoverable error). The status tool polls this row —
+ * QStash itself has no job-state query. Rows are small and keyed by the
+ * `lpimg-<hex>` job id the tool hands back.
+ */
+export const lpImageUploadJobs = pgTable("lp_image_upload_jobs", {
+  id: text("id").primaryKey(),
+  landingPageId: text("landing_page_id")
+    .notNull()
+    .references(() => landingPages.id, { onDelete: "cascade" }),
+  r2Key: text("r2_key").notNull(),
+  status: lpImageUploadJobStatusEnum("status").notNull().default("processing"),
+  error: text("error"),
+  imageId: text("image_id"),
+  src: text("src"),
+  position: integer("position"),
+  width: integer("width"),
+  height: integer("height"),
+  altText: text("alt_text"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
 });
 
 export const dashboardBrand = pgTable("dashboard_brand", {

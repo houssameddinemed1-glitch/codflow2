@@ -414,7 +414,7 @@ export const OfferSchema = z
 export const UploadedImageSchema = z
   .object({
     key: z.string().openapi({
-      description: "R2 object key — pass to POST /api/products/{id}/images as `key`",
+      description: "Blob object key — pass to POST /api/products/{id}/images as `key`",
       example: "products/abc123def456.jpg",
     }),
     url: z.string().url().openapi({
@@ -423,19 +423,4 @@ export const UploadedImageSchema = z
     }),
   })
   .openapi("UploadedImage");
-
-export const PresignedUploadSchema = z
-  .object({
-    presignedUrl: z.string().url().openapi({
-      description: "PUT this URL directly from the browser to upload the file",
-    }),
-    key: z.string().openapi({
-      description: "R2 object key — pass to POST /api/products/{id}/images as `key`",
-      example: "products/abc123def456.jpg",
-    }),
-    publicUrl: z.string().url().openapi({
-      description: "Permanent public URL served via custom domain",
-    }),
-  })
-  .openapi("PresignedUpload");
 
