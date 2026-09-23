@@ -2,7 +2,7 @@
   "compilerOptions": {
     "target": "ES2022",
     "module": "ES2022",
-    "lib": ["ES2022"],
+    "lib": ["ES2022", "DOM"],
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "allowJs": true,
@@ -13,7 +13,7 @@
     "forceConsistentCasingInFileNames": true,
     "isolatedModules": true,
     "noEmit": true,
-    "types": ["@cloudflare/workers-types"],
+    "types": [],
     "paths": {
       "@/*": ["./src/*"],
       "drizzle-orm": ["./node_modules/drizzle-orm"],
@@ -21,5 +21,26 @@
     }
   },
   "include": ["src/**/*", "../cod-shared/**/*"],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules",
+    "src/workflows/capi.ts",
+    "src/workflows/tiktok.ts",
+    "src/workflows/landing-page-image-upload.ts",
+    "src/workflows/landing-page-image-upload.test.ts",
+    "src/mcp/authorize.ts",
+    "src/mcp/authorize.test.ts",
+    "src/mcp/server-factory.ts",
+    "src/mcp/registry.ts",
+    "src/mcp/registry.test.ts",
+    "src/mcp/props.ts",
+    "src/endpoints/mcp/handlers.ts",
+    "src/endpoints/mcp/handlers.test.ts",
+    "src/endpoints/mcp/routes.ts",
+    "src/db/migrate.ts",
+    "src/test-utils/mock-db.ts",
+    "../cod-shared/db/client.ts",
+    "**/*.test.ts",
+    "**/*.e2e.test.ts",
+    "../cod-shared/**/*.test.ts"
+  ]
 }

@@ -1,0 +1,8 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "npm ci --ignore-scripts --legacy-peer-deps",
+  "buildCommand": "node scripts/build-api.mjs",
+  "outputDirectory": "public",
+  "framework": null,
+  "rewrites": [{ "source": "/(.*)", "destination": "/api" }]
+}

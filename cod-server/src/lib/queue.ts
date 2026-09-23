@@ -24,25 +24,38 @@ export async function publishWorkflow(
   payload: unknown,
   deduplicationId?: string,
 ): Promise<boolean> {
+  return (await publishWorkflowWithId(kind, payload, deduplicationId)).ok;
+}
+
+/**
+ * Same as publishWorkflow but also returns the QStash message id — callers
+ * that hand a polling handle back (landing-page image uploads) need it to
+ * correlate. Fail-open contract identical to publishWorkflow.
+ */
+export async function publishWorkflowWithId(
+  kind: WorkflowKind,
+  payload: unknown,
+  deduplicationId?: string,
+): Promise<{ ok: boolean; messageId?: string }> {
   const appUrl =
     process.env.WORKER_SELF_URL ??
     (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null);
   const q = qstash();
   if (!q || !appUrl) {
     console.warn(`[queue] ${kind} skipped — QStash or app URL not configured`);
-    return false;
+    return { ok: false };
   }
   try {
-    await q.publishJSON({
+    const res = await q.publishJSON({
       url: `${appUrl.replace(/\/$/, "")}/api/internal/workflows/${kind}`,
       body: payload,
       retries: 5,
       ...(deduplicationId ? { deduplicationId } : {}),
     });
-    return true;
+    return { ok: true, messageId: res.messageId };
   } catch (err) {
     console.warn(`[queue] ${kind} publish failed:`, err instanceof Error ? err.message : String(err));
-    return false;
+    return { ok: false };
   }
 }
 

@@ -39,7 +39,7 @@ export function dashboardSignInUrl(betterAuthUrl: string): string {
 
 export async function sendInviteEmail(
   db: AppDb,
-  env: { BETTER_AUTH_URL: string },
+  env: { BETTER_AUTH_URL?: string },
   input: InviteEmailInput
 ): Promise<InviteEmailOutcome> {
   try {
@@ -47,7 +47,7 @@ export async function sendInviteEmail(
     const email = renderInviteEmail({
       storeName: store?.name ?? "CodFlow",
       inviteeName: input.name,
-      signInUrl: dashboardSignInUrl(env.BETTER_AUTH_URL),
+      signInUrl: dashboardSignInUrl(env.BETTER_AUTH_URL ?? ""),
       tempPassword: input.tempPassword,
       language: input.language,
     });

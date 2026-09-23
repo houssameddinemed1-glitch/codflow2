@@ -8,6 +8,20 @@
       "when": 1790094395191,
       "tag": "0000_sad_wendigo",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1790103840894,
+      "tag": "0001_milky_sersi",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790163663747,
+      "tag": "0002_massive_hydra",
+      "breakpoints": true
     }
   ]
 }

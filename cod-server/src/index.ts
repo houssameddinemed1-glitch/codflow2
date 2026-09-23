@@ -1,7 +1,10 @@
 /**
- * COD Flow Server - Cloudflare Worker
- * 
- * Main entry point for the backend API.
+ * COD Flow API — Hono application.
+ *
+ * This file defines the Hono app and mounts all routes/middleware.
+ * It is consumed by two entry points:
+ *   - api/index.ts (Vercel) — imports the app and wraps it for Vercel's runtime
+ *   - src/index.ts is NOT the entry — api/index.ts is.
  */
 
 import { OpenAPIHono } from "@hono/zod-openapi";
@@ -35,28 +38,11 @@ import offersRoutes from "@/endpoints/offers/routes";
 import { stockRouter, productStockRouter } from "@/endpoints/stock/routes";
 import { registerSpecEndpoint } from "@/openapi/serve";
 import { openApiValidationHook } from "@/openapi/validation-hook";
-import mcpManagementRoutes from "@/endpoints/mcp/routes";
 import analyticsRoutes from "@/endpoints/analytics/routes";
 import abandonedOrdersRoutes from "@/endpoints/abandoned-orders/routes";
 import storeAbandonedRoutes from "@/endpoints/abandoned-orders/store-routes";
 import storeOtpRoutes from "@/endpoints/store-otp/store-routes";
-
-import { sweepAbandonedOrders } from "@/cron/sweep-abandoned-orders";
-
-// MCP remote server (remote Model Context Protocol endpoint for Claude / AI agents).
-// The OAuthProvider owns OAuth (discovery, client registration, tokens, revocation)
-// and the `/mcp` protected route; the Hono app below is its defaultHandler.
-import { OAuthProvider, type OAuthProviderOptions, type TokenExchangeCallbackOptions } from "@cloudflare/workers-oauth-provider";
-import { createCodMcpHandler } from "@/mcp/server-factory";
-import { authorizeGet, authorizePost } from "@/mcp/authorize";
-import { recordMcpLastUsed } from "@/mcp/last-used";
-import { ALL_SCOPES } from "../../cod-shared/rbac/scopes";
-
-// Cloudflare Workflow classes — MUST be re-exported so Cloudflare can bind
-// them via wrangler.toml [[workflows]].
-export { CodCapiWorkflow } from "@/workflows/capi";
-export { CodTiktokWorkflow } from "@/workflows/tiktok";
-export { CodLandingPageImageUploadWorkflow } from "@/workflows/landing-page-image-upload";
+import { internalWorkflowsRouter } from "@/workflows/routes";
 
 // OpenAPIHono extends Hono: existing routes/middleware keep working, and
 // routes registered via app.openapi() validate requests and feed the
@@ -85,23 +71,40 @@ app.route("/store", storeRoutes);
 app.route("/store", storeAbandonedRoutes);
 app.route("/store", storeOtpRoutes);
 
-// OAuth authorization endpoint — routed here by the OAuthProvider's
-// defaultHandler. Implements the Better Auth login-ticket bridge + consent.
-app.get("/authorize", authorizeGet);
-app.post("/authorize", authorizePost);
-
 // Health check (no auth required)
 app.get("/", (c) => {
   return c.json({
     service: "COD Flow API",
     version: "1.0.0",
     status: "healthy",
-    environment: c.env.ENVIRONMENT
+    environment: c.env.ENVIRONMENT,
   });
 });
 
 app.get("/health", (c) => {
   return c.json({ status: "ok" });
+});
+
+// ─── Internal workflows (QStash-verified) ────────────────────────────────────
+// POST /api/internal/workflows/capi — receives QStash callbacks
+// POST /api/internal/workflows/tiktok — receives QStash callbacks
+// POST /api/internal/workflows/lp-image-upload — receives QStash callbacks
+// NOTE: the /api prefix must match lib/queue.ts publishWorkflow, and this
+// mount must stay BEFORE app.use("/api/*", authMiddleware) — QStash carries
+// no merchant JWT (signature verified per request inside the router).
+app.route("/api/internal/workflows", internalWorkflowsRouter);
+
+// ─── Cron (Vercel Cron / QStash scheduled) ───────────────────────────────────
+// GET /api/cron — sweep abandoned orders (protected by CRON_SECRET header)
+app.get("/api/cron", async (c) => {
+  const secret = c.req.header("authorization")?.replace("Bearer ", "") ?? "";
+  const expected = c.env.CRON_SECRET;
+  if (expected && secret !== expected) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+  const { sweepAbandonedOrders } = await import("@/cron/sweep-abandoned-orders");
+  const count = await sweepAbandonedOrders();
+  return c.json({ ok: true, swept: count });
 });
 
 // Protected routes (require authentication)
@@ -129,7 +132,6 @@ app.route("/api/reviews", reviewsRoutes);
 app.route("/api/offers", offersRoutes);
 app.route("/api/stock", stockRouter);
 app.route("/api/products", productStockRouter);
-app.route("/api/mcp", mcpManagementRoutes);
 app.route("/api/analytics", analyticsRoutes);
 app.route("/api/abandoned-orders", abandonedOrdersRoutes);
 
@@ -138,67 +140,5 @@ app.notFound((c) => {
   return c.json({ error: "Not found" }, 404);
 });
 
-// ─── MCP OAuth provider ──────────────────────────────────────────────────────
-// The `@cloudflare/workers-oauth-provider` owns the MCP OAuth surface:
-//   • serves RFC 9728 protected-resource + RFC 8414 authorization-server
-//     discovery, the token/revocation endpoints, and dynamic client
-//     registration (DCR) / Client ID Metadata Documents (CIMD);
-//   • guards `/mcp` (apiRoute): validates the opaque access token against
-//     OAUTH_KV, binds the audience to the configured resource, decrypts the
-//     application props into `ctx.props`, and hands the request to the MCP
-//     handler; invalid/missing tokens get the spec `WWW-Authenticate` challenge;
-//   • routes everything else — including `/authorize` — to `defaultHandler`
-//     (this Hono app).
-//
-// Built lazily on first request because `resourceMetadata.resource` derives
-// from `WORKER_SELF_URL`; `env` is constant per deployment, so the singleton
-// never needs to be rebuilt.
-let oauthProviderInstance: OAuthProvider<Env> | undefined;
-
-function oauthProviderOptions(env: Env): OAuthProviderOptions<Env> {
-  const resourceOrigin = new URL(env.WORKER_SELF_URL);
-  return {
-    apiRoute: "/mcp",
-    apiHandler: {
-      fetch: (request, requestEnv, ctx) => createCodMcpHandler(requestEnv)(request, requestEnv, ctx),
-    },
-    defaultHandler: {
-      fetch: (request, requestEnv, ctx) => app.fetch(request, requestEnv, ctx),
-    },
-    authorizeEndpoint: "/authorize",
-    tokenEndpoint: "/oauth/token",
-    clientRegistrationEndpoint: "/oauth/register",
-    clientIdMetadataDocumentEnabled: true,
-    scopesSupported: ALL_SCOPES,
-    resourceMetadata: {
-      resource: new URL("/mcp", resourceOrigin).toString(),
-      authorization_servers: [resourceOrigin.origin],
-      scopes_supported: ALL_SCOPES,
-      resource_name: "CodFlow MCP",
-    },
-    accessTokenTTL: 60 * 60,
-    refreshTokenTTL: 60 * 60 * 24 * 30,
-    tokenExchangeCallback: (options: TokenExchangeCallbackOptions) =>
-      recordMcpLastUsed(env.OAUTH_KV, options.userId, options.grantId),
-  };
-}
-
-function getOAuthProvider(env: Env): OAuthProvider<Env> {
-  if (!oauthProviderInstance) {
-    oauthProviderInstance = new OAuthProvider<Env>(oauthProviderOptions(env));
-  }
-  return oauthProviderInstance;
-}
-
-export default {
-  fetch: (request: Request, env: Env, ctx: ExecutionContext) =>
-    getOAuthProvider(env).fetch(request, env, ctx),
-  async scheduled(
-    _event: ScheduledEvent,
-    env: Env,
-    ctx: ExecutionContext
-  ): Promise<void> {
-    ctx.waitUntil(sweepAbandonedOrders(env));
-    ctx.waitUntil(getOAuthProvider(env).purgeExpiredData(env, { batchSize: 50 }));
-  },
-};
+// Export for Vercel entry point — does NOT export CF-specific stuff
+export default app;

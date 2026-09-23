@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 import { defineConfig, envField } from "astro/config";
 import react from "@astrojs/react";
 import tailwindcss from "@tailwindcss/vite";
-import cloudflare from "@astrojs/cloudflare";
+import vercel from "@astrojs/vercel";
 
 const orderDetailFallback = {
   name: "order-detail-static-fallback",
@@ -30,27 +30,17 @@ const orderDetailFallback = {
 };
 
 // Static-first: every page prerenders at build time except routes that opt out
-// with `export const prerender = false` (currently only /api/auth/*).
+// with `export const prerender = false` (/api/auth/*, /mcp/oauth/login,
+// /reset-password/*). Those become Vercel serverless functions.
 export default defineConfig({
   output: "static",
-  // No Astro.session usage (auth is better-auth + its own KV) — docs:
-  // session:false skips SESSION KV provisioning and drops the session
-  // runtime from the Worker bundle.
-  session: false,
   env: {
     schema: {
       PUBLIC_API_URL: envField.string({ context: "client", access: "public" }),
     },
   },
   integrations: [react()],
-  adapter: cloudflare({
-    // No astro:assets usage yet — noop image service per adapter docs.
-    imageService: "passthrough",
-    // Share one local D1/KV state with cod-server (`npm run dev` there uses
-    // --persist-to ../.wrangler-shared): without this, astro dev gets its own
-    // empty SQLite and sign-in fails against an unmigrated database.
-    persistState: { path: "../.wrangler-shared" },
-  }),
+  adapter: vercel(),
   vite: {
     plugins: [orderDetailFallback, tailwindcss()],
     resolve: {

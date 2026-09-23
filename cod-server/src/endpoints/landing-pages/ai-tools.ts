@@ -14,8 +14,13 @@ import {
   mintLandingImageUploadIds,
 } from "@/lib/landing-image-upload";
 import { toolOutput } from "@/lib/tool-output-schema";
+import { blobDel, blobPut } from "@/lib/blob";
+import { publishWorkflowWithId } from "@/lib/queue";
 import {
   buildLandingPagePublicUrl,
+  createLpImageUploadJob,
+  getLpImageUploadJob,
+  markLpImageUploadFailed,
   resolveStorefrontBaseUrl,
 } from "../../../../cod-shared/queries/landing-pages";
 
@@ -359,25 +364,35 @@ export const archiveLandingPageSchema = z.strictObject({
   landingPageId: z.string().uuid().describe("The UUID of the landing page to archive"),
 });
 
-/** Workflow InstanceStatus → the shape the status tool reports to the model. */
+/** Upload job row → the shape the status tool reports to the model. */
 export interface UploadJobStatusView {
-  status: "processing" | "complete" | "failed" | "stopped" | "unknown";
+  status: "processing" | "complete" | "failed" | "unknown";
   image?: unknown;
   error?: string;
   note?: string;
   advice?: string;
 }
 
-export function mapUploadJobStatus(raw: {
+export function mapUploadJobStatus(job: {
   status: string;
-  error?: { message?: string } | null;
-  output?: unknown;
-}): UploadJobStatusView {
-  switch (raw.status) {
-    case "queued":
-    case "running":
-    case "waiting":
-    case "waitingForPause":
+  error?: string | null;
+  imageId?: string | null;
+  src?: string | null;
+  position?: number | null;
+  width?: number | null;
+  height?: number | null;
+  altText?: string | null;
+} | null): UploadJobStatusView {
+  if (!job) {
+    return {
+      status: "unknown",
+      advice:
+        "This job is not a known upload (or its record is gone). " +
+        "Check getLandingPageDetails to see whether the image landed before re-uploading.",
+    };
+  }
+  switch (job.status) {
+    case "processing":
       return {
         status: "processing",
         note: "The upload is still running — keep polling with the same uploadJobId.",
@@ -385,19 +400,23 @@ export function mapUploadJobStatus(raw: {
     case "complete":
       return {
         status: "complete",
-        image: raw.output ?? null,
+        image: {
+          imageId: job.imageId,
+          src: job.src,
+          position: job.position,
+          width: job.width,
+          height: job.height,
+          altText: job.altText,
+        },
         advice:
           "The image is in the landing page stack. Review it with getLandingPageDetails, arrange the stack with reorderLandingPageImages if needed, " +
           "then publishLandingPage to make the link live.",
       };
-    case "errored":
+    case "failed":
       return {
         status: "failed",
-        error: raw.error?.message ?? "The upload failed for an unknown reason.",
+        error: job.error ?? "The upload failed for an unknown reason.",
       };
-    case "paused":
-    case "terminated":
-      return { status: "stopped", note: `The upload job was ${raw.status}.` };
     default:
       return {
         status: "unknown",
@@ -424,12 +443,10 @@ export const LANDING_PAGE_TOOL_SCHEMAS: Record<string, z.ZodRawShape> = {
   archiveLandingPage: archiveLandingPageSchema.shape,
 };
 
-/** Env surface the landing-page tools consume: deployment vars, the R2
- *  bucket, and the background upload workflow binding. */
-export type LandingPageToolEnv = Pick<
-  Env,
-  "STOREFRONT_URL" | "IMAGES" | "MEDIA_DOMAIN" | "LP_IMAGE_UPLOAD_WORKFLOW"
->;
+/** Env surface the landing-page tools consume: deployment vars. Storage is
+ *  Vercel Blob (via lib/blob) and background uploads go through QStash
+ *  (via lib/queue) — no bindings travel in this object. */
+export type LandingPageToolEnv = Pick<Env, "STOREFRONT_URL" | "MEDIA_DOMAIN">;
 
 /** Verified session identity — structurally satisfied by McpProps. Only the
  *  upload tool needs it (the background workflow audits through this actor). */
@@ -745,11 +762,11 @@ export const getLandingPageTools = (
         }
         const data = parsed.data;
 
-        if (!env?.LP_IMAGE_UPLOAD_WORKFLOW || !env.MEDIA_DOMAIN) {
+        if (!env?.MEDIA_DOMAIN) {
           return {
             success: false,
             error:
-              "Image upload is not available on this deployment — the background upload workflow is not provisioned.",
+              "Image upload is not available on this deployment — the media domain is not provisioned.",
           };
         }
         if (!session) {
@@ -793,9 +810,6 @@ export const getLandingPageTools = (
           }
           kind = "bytes";
 
-          if (!env.IMAGES) {
-            return { success: false, error: "Image upload is not available — R2 storage is not bound." };
-          }
           let bytes: Uint8Array;
           try {
             bytes = decodeBase64Image(imageBase64);
@@ -826,13 +840,7 @@ export const getLandingPageTools = (
             };
           }
           try {
-            await env.IMAGES.put(r2Key, bytes, {
-              httpMetadata: {
-                contentType: claimed,
-                cacheControl: "public, max-age=31536000, immutable",
-              },
-              customMetadata: { source: "ai", uploadedAt: new Date().toISOString() },
-            });
+            await blobPut(r2Key, Buffer.from(bytes), claimed);
           } catch (err) {
             return {
               success: false,
@@ -841,37 +849,57 @@ export const getLandingPageTools = (
           }
         }
 
-        let instance: { id: string };
+        // Durable polling handle: the QStash runner flips this row to
+        // complete/failed; the status tool reads it (QStash has no job query).
         try {
-          instance = await env.LP_IMAGE_UPLOAD_WORKFLOW.create({
+          await createLpImageUploadJob(db, {
             id: instanceId,
-            params: {
-              kind,
-              landingPageId: data.landingPageId,
-              r2Key,
-              contentType: data.contentType,
-              ...(imageUrl !== undefined ? { imageUrl } : {}),
-              ...(data.altText !== undefined ? { altText: data.altText } : {}),
-              ...(data.position !== undefined ? { position: data.position } : {}),
-              ...(data.width !== undefined ? { width: data.width } : {}),
-              ...(data.height !== undefined ? { height: data.height } : {}),
-              actor: {
-                id: session.userId,
-                name: session.name || session.email || session.userId,
-                role: session.role,
-              },
-            },
+            landingPageId: data.landingPageId,
+            r2Key,
           });
         } catch (err) {
           return {
             success: false,
-            error: `Failed to start the background upload: ${(err as Error).message}`,
+            error: `Failed to record the background upload: ${(err as Error).message}`,
+          };
+        }
+
+        const published = await publishWorkflowWithId(
+          "lp-image-upload",
+          {
+            uploadJobId: instanceId,
+            kind,
+            landingPageId: data.landingPageId,
+            r2Key,
+            contentType: data.contentType,
+            ...(imageUrl !== undefined ? { imageUrl } : {}),
+            ...(data.altText !== undefined ? { altText: data.altText } : {}),
+            ...(data.position !== undefined ? { position: data.position } : {}),
+            ...(data.width !== undefined ? { width: data.width } : {}),
+            ...(data.height !== undefined ? { height: data.height } : {}),
+            actor: {
+              id: session.userId,
+              name: session.name || session.email || session.userId,
+              role: session.role,
+            },
+          },
+          instanceId,
+        );
+        if (!published.ok) {
+          await markLpImageUploadFailed(
+            db,
+            instanceId,
+            "The background upload queue is not configured on this deployment.",
+          ).catch(() => {});
+          return {
+            success: false,
+            error: "Failed to start the background upload: the queue is not configured on this deployment.",
           };
         }
 
         return {
           success: true,
-          uploadJobId: instance.id,
+          uploadJobId: instanceId,
           status: "processing",
           r2Key,
           src: `https://${env.MEDIA_DOMAIN}/${r2Key}`,
@@ -900,33 +928,11 @@ export const getLandingPageTools = (
           };
         }
 
-        if (!env?.LP_IMAGE_UPLOAD_WORKFLOW) {
-          return {
-            success: false,
-            error:
-              "Upload status is not available on this deployment — the background upload workflow is not provisioned.",
-          };
-        }
-
-        let instance: { status(): Promise<{ status: string; error?: { message?: string } | null; output?: unknown }> };
-        try {
-          instance = await env.LP_IMAGE_UPLOAD_WORKFLOW.get(parsed.data.uploadJobId);
-        } catch {
-          return {
-            success: true,
-            uploadJobId: parsed.data.uploadJobId,
-            status: "unknown",
-            advice:
-              "This job's state is no longer retained (or the ID is not a known job). " +
-              "Check getLandingPageDetails to see whether the image landed before re-uploading.",
-          };
-        }
-
-        const raw = await instance.status();
+        const job = await getLpImageUploadJob(db, parsed.data.uploadJobId);
         return {
           success: true,
           uploadJobId: parsed.data.uploadJobId,
-          ...mapUploadJobStatus(raw),
+          ...mapUploadJobStatus(job),
         };
       } catch (error) {
         return { success: false, error: `Failed to check upload status: ${(error as Error).message}` };
@@ -969,14 +975,8 @@ export const getLandingPageTools = (
             imageId,
           );
           if (otherRefs === 0) {
-            if (!env?.IMAGES) {
-              return {
-                success: false,
-                error: "Image removal is not available — R2 storage is not bound on this deployment.",
-              };
-            }
             try {
-              await env.IMAGES.delete(image.r2Key);
+              await blobDel(image.r2Key);
             } catch (err) {
               return {
                 success: false,

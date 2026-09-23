@@ -16,7 +16,15 @@ export default defineConfig({
       '**/node_modules/**',
       '**/dist/**',
       '**/.{idea,git,cache,output,temp}/**',
-      '**/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build}.config.*'
+      '**/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build}.config.*',
+      // Vercel stack: miniflare/D1 e2e suites need the Cloudflare runtime
+      // (miniflare is not installed). Port or re-enable per-suite when the
+      // PGlite harness covers them. NOTE: '**/*.e2e.test.ts' does NOT match
+      // in micromatch (verified) — the broader '*e2e*' does.
+      '**/*e2e*',
+      // Tests the retired Cloudflare Workflow class (see run-lp-image-upload
+      // for the QStash replacement).
+      'src/workflows/landing-page-image-upload.test.ts',
     ],
 
     // Test timeout configuration

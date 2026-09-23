@@ -8,3 +8,5 @@ dist
 
 # Code review reports (internal documentation)
 CODE_REVIEW_REPORT.md
+
+.vercel

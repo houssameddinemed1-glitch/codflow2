@@ -3,6 +3,7 @@ import type { AppContext } from "@/types";
 import { verifyQstashRequest } from "@/lib/queue";
 import { runCapiEvent } from "./run-capi";
 import { runTiktokEvent } from "./run-tiktok";
+import { runLpImageUpload } from "./run-lp-image-upload";
 
 /**
  * Internal background-work endpoints, called ONLY by QStash (signature
@@ -36,5 +37,18 @@ internalWorkflowsRouter.post("/tiktok", async (c) => {
   } catch (err) {
     console.error("[workflow][tiktok] failed:", err instanceof Error ? err.message : String(err));
     return c.json({ success: false, error: "TikTok send failed" }, 500);
+  }
+});
+
+internalWorkflowsRouter.post("/lp-image-upload", async (c) => {
+  if (!(await verifyQstashRequest(c.req.raw))) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+  try {
+    const result = await runLpImageUpload(await c.req.json());
+    return c.json({ success: true, data: result }, 200);
+  } catch (err) {
+    console.error("[workflow][lp-image-upload] failed:", err instanceof Error ? err.message : String(err));
+    return c.json({ success: false, error: "Image upload failed" }, 500);
   }
 });

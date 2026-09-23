@@ -17,10 +17,10 @@ function tokenOption(): { token: string } | Record<string, never> {
 
 export async function blobPut(
   pathname: string,
-  body: ArrayBuffer | Uint8Array | Blob,
+  body: ArrayBuffer | Uint8Array | Blob | string,
   contentType: string,
 ): Promise<{ url: string; pathname: string }> {
-  const blob = await put(pathname, body, {
+  const blob = await put(pathname, body as string | Blob, {
     access: "public",
     contentType,
     cacheControlMaxAge: IMMUTABLE_CACHE_SECONDS,

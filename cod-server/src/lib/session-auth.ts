@@ -21,8 +21,8 @@ export interface SessionJwtPayload {
 }
 
 interface Env {
-  BETTER_AUTH_URL: string;
-  WORKER_SELF_URL: string;
+  BETTER_AUTH_URL?: string;
+  WORKER_SELF_URL?: string;
 }
 
 const JWKS_TTL_MS = 5 * 60 * 1000;
@@ -31,7 +31,7 @@ let jwksCache: { keys: JsonWebKey[]; kidByKeyId: Map<string, number>; fetchedAt:
   null;
 
 function authBaseUrl(env: Env): string {
-  return env.BETTER_AUTH_URL.replace(/\/api\/auth$/, "");
+  return (env.BETTER_AUTH_URL ?? "").replace(/\/api\/auth$/, "");
 }
 
 async function fetchJwks(env: Env, force = false): Promise<void> {
@@ -78,7 +78,7 @@ export async function verifySessionJwt(token: string, env: Env): Promise<Session
   const valid = await crypto.subtle.verify(
     { name: "Ed25519" },
     key,
-    b64urlToBytes(parts[2]),
+    b64urlToBytes(parts[2]).buffer as ArrayBuffer,
     new TextEncoder().encode(`${parts[0]}.${parts[1]}`)
   );
   if (!valid) throw new Error("Invalid signature");
@@ -90,7 +90,7 @@ export async function verifySessionJwt(token: string, env: Env): Promise<Session
     throw new Error("Token expired");
   }
 
-  if (payload.iss && payload.iss !== env.BETTER_AUTH_URL.replace(/\/api\/auth$/, "")) {
+  if (payload.iss && payload.iss !== (env.BETTER_AUTH_URL ?? "").replace(/\/api\/auth$/, "")) {
     throw new Error(`Invalid issuer: ${payload.iss}`);
   }
   if (payload.aud) {

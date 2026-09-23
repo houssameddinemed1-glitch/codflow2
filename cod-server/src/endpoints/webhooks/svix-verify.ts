@@ -45,7 +45,7 @@ export async function verifySvixSignature(
   // Import the key for HMAC-SHA256
   const cryptoKey = await crypto.subtle.importKey(
     "raw",
-    keyBytes,
+    keyBytes.buffer as ArrayBuffer,
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"]
