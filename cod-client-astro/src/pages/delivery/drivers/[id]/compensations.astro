@@ -1,0 +1,18 @@
+---
+export const prerender = false;
+import BaseLayout from "@/layouts/BaseLayout.astro";
+import GateSpinner from "@/features/auth/components/GateSpinner";
+import DriverCompensationsPageApp from "@/features/delivery/components/DriverCompensationsPageApp";
+const { id } = Astro.params;
+---
+
+<BaseLayout title="CodFlow">
+  <main class="min-h-screen">
+    <div data-gate-spinner="required" class="flex min-h-screen items-center justify-center" aria-busy="true">
+      <GateSpinner branded />
+    </div>
+    <div data-auth-gate="required" hidden>
+      <DriverCompensationsPageApp client:only="react" driverId={id!} />
+    </div>
+  </main>
+</BaseLayout>
