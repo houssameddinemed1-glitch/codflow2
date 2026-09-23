@@ -13,19 +13,24 @@ import {
   upsertEmailConfig,
 } from "./email-config";
 
+/** pg-convention mock: drizzle builders are thenables resolving to row arrays. */
+function thenRows(row: unknown) {
+  const rows = row === undefined ? [] : [row];
+  return { then: (resolve: (rows: unknown[]) => unknown) => Promise.resolve(rows).then(resolve) };
+}
+
 function makeDb(row: unknown | undefined) {
-  const get = vi.fn(async () => row);
-  const returningGet = vi.fn(async () => row);
+  const returning = vi.fn(() => thenRows(row));
   const db = {
     select: vi.fn(() => ({
       from: vi.fn(() => ({
-        where: vi.fn(() => ({ get })),
+        where: vi.fn(() => thenRows(row)),
       })),
     })),
     update: vi.fn(() => ({
       set: vi.fn(() => ({
         where: vi.fn(() => ({
-          returning: vi.fn(() => ({ get: returningGet })),
+          returning,
         })),
       })),
     })),
@@ -33,13 +38,13 @@ function makeDb(row: unknown | undefined) {
       values: vi.fn(async () => undefined),
     })),
   } as any;
-  return { db, get, returningGet };
+  return { db, returning };
 }
 
 describe("getEmailConfig", () => {
-  it("returns undefined when no row exists (feature inert)", async () => {
+  it("returns null when no row exists (feature inert)", async () => {
     const { db } = makeDb(undefined);
-    expect(await getEmailConfig(db, "store-1")).toBeUndefined();
+    expect(await getEmailConfig(db, "store-1")).toBeNull();
   });
 
   it("returns the safe projection — apiKey is not selected", async () => {
@@ -85,10 +90,9 @@ describe("upsertEmailConfig", () => {
 
   it("inserts a new row with defaults (enabled, no from name) and returns the safe shape", async () => {
     const { db } = makeDb(undefined);
-    const selectGet = vi.fn(async () => undefined);
     db.select = vi.fn(() => ({
       from: vi.fn(() => ({
-        where: vi.fn(() => ({ get: selectGet })),
+        where: vi.fn(() => thenRows(undefined)),
       })),
     })) as any;
 
@@ -112,10 +116,9 @@ describe("upsertEmailConfig", () => {
 
   it("stores fromName and enabled=false when provided", async () => {
     const { db } = makeDb(undefined);
-    const selectGet = vi.fn(async () => undefined);
     db.select = vi.fn(() => ({
       from: vi.fn(() => ({
-        where: vi.fn(() => ({ get: selectGet })),
+        where: vi.fn(() => thenRows(undefined)),
       })),
     })) as any;
 
@@ -131,7 +134,7 @@ describe("upsertEmailConfig", () => {
   });
 
   it("updates an existing row instead of inserting", async () => {
-    const { db, returningGet } = makeDb({
+    const { db, returning } = makeDb({
       storeId: "store-1",
       fromEmail: "noreply@acme.com",
       fromName: null,
@@ -139,10 +142,9 @@ describe("upsertEmailConfig", () => {
       createdAt: "t",
       updatedAt: "t2",
     });
-    const selectGet = vi.fn(async () => ({ id: "row-1" }));
     db.select = vi.fn(() => ({
       from: vi.fn(() => ({
-        where: vi.fn(() => ({ get: selectGet })),
+        where: vi.fn(() => thenRows({ id: "row-1" })),
       })),
     })) as any;
 
@@ -156,6 +158,6 @@ describe("upsertEmailConfig", () => {
     expect(db.insert).not.toHaveBeenCalled();
     expect(db.update).toHaveBeenCalledOnce();
     expect(result).toMatchObject({ enabled: false, fromEmail: "noreply@acme.com" });
-    expect(returningGet).toHaveBeenCalled();
+    expect(returning).toHaveBeenCalled();
   });
 });

@@ -16,7 +16,9 @@ describe("getAllProducts", () => {
     const db = makeMockDb([
       a([
         {
-          ...productRow(),
+          // pg-faithful booleans: real Neon returns true/false for boolean
+          // columns (the D1-era 0/1 integers bypass the mock's mapping).
+          ...productRow({ has_variants: false }),
           review_count: 7,
           avg_rating: 4.5,
           primary_image_src: "https://example.com/cover.jpg",

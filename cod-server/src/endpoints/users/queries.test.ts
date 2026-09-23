@@ -27,8 +27,9 @@ function makeDb() {
     run: vi.fn(async () => undefined),
     select: vi.fn(() => ({
       from: vi.fn(() => ({
+        // pg-convention: drizzle builders are thenables resolving to row arrays.
         where: vi.fn(() => ({
-          get: vi.fn(async () => undefined),
+          then: (resolve: (rows: unknown[]) => unknown) => Promise.resolve([]).then(resolve),
         })),
       })),
     })),

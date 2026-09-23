@@ -153,7 +153,14 @@ export function makeMockDb(queue: Q[] = []): AppDb {
     exec: () => Promise.resolve({ count: 0, duration: 0 } as D1ExecResult),
   } as unknown as D1Database;
 
-  return drizzle(d1, { schema }) as unknown as AppDb;
+  const db = drizzle(d1, { schema }) as unknown as AppDb;
+
+  // pg-convention: neon-http exposes db.execute(sql) resolving directly to
+  // row objects. Raw-SQL reads consume the sequential queue exactly like
+  // SELECTs (f → single row, a → rows), in call order.
+  (db as unknown as Record<string, unknown>).execute = async () => consume();
+
+  return db;
 }
 
 // ─── Row fixtures (snake_case = D1 / database column names) ──────────────────

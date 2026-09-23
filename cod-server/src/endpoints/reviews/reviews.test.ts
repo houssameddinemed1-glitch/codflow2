@@ -40,10 +40,10 @@ function reviewRow(overrides: Record<string, any> = {}) {
 // ─── Query logic ───────────────────────────────────────────────────────────────
 
 describe("getReviewById", () => {
-  it("returns undefined when review doesn't exist", async () => {
+  it("returns null when review doesn't exist", async () => {
     const db = makeMockDb([a([])]);
     const result = await getReviewById(db, "nonexistent");
-    expect(result).toBeUndefined();
+    expect(result).toBeNull();
   });
 
   it("returns review when it exists", async () => {

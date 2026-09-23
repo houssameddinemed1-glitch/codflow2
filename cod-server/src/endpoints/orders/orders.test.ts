@@ -66,6 +66,15 @@ vi.mock("../../../../cod-shared/queries/carrier-geo");
 const NOW = new Date().toISOString();
 let mockDb: any;
 
+/** pg-convention: where() returns a thenable resolving to [row]; keeps get for legacy call sites. */
+function whereRow(row: any) {
+  const rows = row === undefined || row === null ? [] : [row];
+  return {
+    then: (resolve: (rows: any[]) => unknown) => Promise.resolve(rows).then(resolve),
+    get: vi.fn(async () => row),
+  };
+}
+
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
 function orderRow(overrides: Record<string, any> = {}) {
@@ -242,9 +251,7 @@ describe("Orders — targeted business-logic tests", () => {
       mockDb = {
         select: vi.fn(() => ({
           from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              get: vi.fn(async () => ({ id: "drv_1" })),
-            })),
+            where: vi.fn(() => whereRow({ id: "drv_1" })),
           })),
         })),
       };
@@ -272,9 +279,7 @@ describe("Orders — targeted business-logic tests", () => {
       mockDb = {
         select: vi.fn(() => ({
           from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              get: vi.fn(async () => ({ id: "drv_1" })),
-            })),
+            where: vi.fn(() => whereRow({ id: "drv_1" })),
           })),
         })),
       };
@@ -301,9 +306,7 @@ describe("Orders — targeted business-logic tests", () => {
       mockDb = {
         select: vi.fn(() => ({
           from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              get: vi.fn(async () => ({ id: "drv_1" })),
-            })),
+            where: vi.fn(() => whereRow({ id: "drv_1" })),
           })),
         })),
       };
@@ -323,9 +326,7 @@ describe("Orders — targeted business-logic tests", () => {
       mockDb = {
         select: vi.fn(() => ({
           from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              get: vi.fn(async () => null), // driver not found
-            })),
+            where: vi.fn(() => whereRow(null)), // driver not found
           })),
         })),
       };
@@ -464,9 +465,7 @@ describe("Orders — targeted business-logic tests", () => {
       mockDb = {
         select: vi.fn(() => ({
           from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              get: vi.fn(async () => ({ name: "Alger", nameAr: "الجزائر" })),
-            })),
+            where: vi.fn(() => whereRow({ name: "Alger", nameAr: "الجزائر" })),
           })),
         })),
       };
@@ -506,9 +505,7 @@ describe("Orders — targeted business-logic tests", () => {
       mockDb = {
         select: vi.fn(() => ({
           from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              get: vi.fn(async () => ({ name: "Alger", nameAr: "الجزائر" })),
-            })),
+            where: vi.fn(() => whereRow({ name: "Alger", nameAr: "الجزائر" })),
           })),
         })),
         insert: vi.fn(() => ({ values: vi.fn(async () => undefined) })),
@@ -553,9 +550,7 @@ describe("Orders — targeted business-logic tests", () => {
       mockDb = {
         select: vi.fn(() => ({
           from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              get: vi.fn(async () => ({ name: "Alger", nameAr: "الجزائر" })),
-            })),
+            where: vi.fn(() => whereRow({ name: "Alger", nameAr: "الجزائر" })),
           })),
         })),
         insert: vi.fn(() => ({ values: vi.fn(async () => undefined) })),
@@ -601,9 +596,7 @@ describe("Orders — targeted business-logic tests", () => {
       mockDb = {
         select: vi.fn(() => ({
           from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              get: vi.fn(async () => ({ name: "Setif", nameAr: "سطيف" })),
-            })),
+            where: vi.fn(() => whereRow({ name: "Setif", nameAr: "سطيف" })),
           })),
         })),
         insert: vi.fn(() => ({ values: vi.fn(async () => undefined) })),
@@ -651,9 +644,7 @@ describe("Orders — targeted business-logic tests", () => {
       mockDb = {
         select: vi.fn(() => ({
           from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              get: vi.fn(async () => ({ name: "Alger", nameAr: "الجزائر" })),
-            })),
+            where: vi.fn(() => whereRow({ name: "Alger", nameAr: "الجزائر" })),
           })),
         })),
         insert: vi.fn(() => ({ values: vi.fn(async () => undefined) })),
@@ -698,9 +689,7 @@ describe("Orders — targeted business-logic tests", () => {
       mockDb = {
         select: vi.fn(() => ({
           from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              get: vi.fn(async () => ({ name: "Alger", nameAr: "الجزائر" })),
-            })),
+            where: vi.fn(() => whereRow({ name: "Alger", nameAr: "الجزائر" })),
           })),
         })),
         insert: vi.fn(() => ({ values: vi.fn(async () => undefined) })),
@@ -1099,9 +1088,7 @@ describe("Orders — targeted business-logic tests", () => {
       mockDb = {
         select: vi.fn(() => ({
           from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              get: vi.fn(async () => ({ name: "Alger Centre" })),
-            })),
+            where: vi.fn(() => whereRow({ name: "Alger Centre" })),
           })),
         })),
       };
@@ -1180,9 +1167,7 @@ describe("Orders — targeted business-logic tests", () => {
       mockDb = {
         select: vi.fn(() => ({
           from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              get: vi.fn(async () => ({ id: "cust_1" })),
-            })),
+            where: vi.fn(() => whereRow({ id: "cust_1" })),
           })),
         })),
         insert: vi.fn(() => ({ values: vi.fn(async () => undefined) })),
@@ -1210,9 +1195,7 @@ describe("Orders — targeted business-logic tests", () => {
       mockDb = {
         select: vi.fn(() => ({
           from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              get: vi.fn(async () => ({ id: "cust_1" })),
-            })),
+            where: vi.fn(() => whereRow({ id: "cust_1" })),
           })),
         })),
         insert: vi.fn(() => ({ values: vi.fn(async () => undefined) })),
@@ -1277,9 +1260,7 @@ describe("Orders — targeted business-logic tests", () => {
       mockDb = {
         select: vi.fn(() => ({
           from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              get: vi.fn(async () => getQueue.shift()),
-            })),
+            where: vi.fn(() => whereRow(getQueue.shift())),
           })),
         })),
         insert: vi.fn(() => ({
@@ -1400,9 +1381,7 @@ describe("Orders — targeted business-logic tests", () => {
       mockDb = {
         select: vi.fn(() => ({
           from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              get: vi.fn(async () => ({ id: "cust_1" })),
-            })),
+            where: vi.fn(() => whereRow({ id: "cust_1" })),
           })),
         })),
         insert: vi.fn(() => ({ values: vi.fn(async () => undefined) })),

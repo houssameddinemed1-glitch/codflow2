@@ -8,18 +8,25 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { getFormConfig, upsertFormConfig } from "./form-config";
 
+/** pg-convention mock: drizzle builders are thenables resolving to row arrays. */
+function thenRows(row: unknown) {
+  const rows = row === undefined ? [] : [row];
+  return { then: (resolve: (rows: unknown[]) => unknown) => Promise.resolve(rows).then(resolve) };
+}
+
 function makeDb(row: unknown | undefined) {
-  const get = vi.fn(async () => row);
+  const returning = vi.fn(() => thenRows(row));
   const db = {
     select: vi.fn(() => ({
       from: vi.fn(() => ({
-        where: vi.fn(() => ({ get })),
+        where: vi.fn(() => thenRows(row)),
+        limit: vi.fn(() => thenRows(row)),
       })),
     })),
     update: vi.fn(() => ({
       set: vi.fn(() => ({
         where: vi.fn(() => ({
-          returning: vi.fn(() => ({ get: vi.fn(async () => row) })),
+          returning,
         })),
       })),
     })),
@@ -27,13 +34,13 @@ function makeDb(row: unknown | undefined) {
       values: vi.fn(async () => undefined),
     })),
   } as any;
-  return { db, get };
+  return { db, returning };
 }
 
 describe("getFormConfig", () => {
-  it("returns undefined when no row exists (Default form)", async () => {
+  it("returns null when no row exists (Default form)", async () => {
     const { db } = makeDb(undefined);
-    expect(await getFormConfig(db, "store-1")).toBeUndefined();
+    expect(await getFormConfig(db, "store-1")).toBeNull();
   });
 
   it("returns the stored variant", async () => {
@@ -59,7 +66,7 @@ describe("upsertFormConfig", () => {
     const { db } = makeDb({ variant: "form_a" });
     const setSpy = vi.fn(() => ({
       where: vi.fn(() => ({
-        returning: vi.fn(() => ({ get: vi.fn(async () => ({})) })),
+        returning: vi.fn(() => thenRows({})),
       })),
     }));
     (db.update as any).mockReturnValue({ set: setSpy });

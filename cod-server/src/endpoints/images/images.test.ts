@@ -1,7 +1,9 @@
 /**
- * Integration Tests for Images Endpoint
- * 
- * Tests error scenarios for images endpoints.
+ * Integration Tests for Images Endpoint (Vercel Blob port)
+ *
+ * Tests error scenarios for images endpoints. Storage goes through the
+ * `@/lib/blob` seam (mocked here); the S3 presign route is retired —
+ * direct browser uploads use POST /api/images/blob-callback instead.
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
@@ -10,7 +12,17 @@ import type { AppContext } from "@/types";
 import { errorHandler } from "@/middleware/error";
 import { ERROR_CODES, ERROR_CATEGORIES } from "../../../../cod-shared/errors/codes";
 import * as handlers from "./handlers";
-import { presignUpload } from "./presign";
+import { blobPut, blobDel, blobPublicUrl } from "@/lib/blob";
+
+vi.mock("@/lib/blob", () => ({
+  blobPut: vi.fn(),
+  blobDel: vi.fn(),
+  blobContentType: vi.fn(),
+  blobPublicUrl: vi.fn(),
+}));
+
+// Rows resolved by bare-awaited drizzle builders (pg-convention thenable).
+let dbRows: any[] = [];
 
 // Mock the database
 const mockDb = {
@@ -18,6 +30,7 @@ const mockDb = {
   from: vi.fn().mockReturnThis(),
   where: vi.fn().mockReturnThis(),
   orderBy: vi.fn().mockReturnThis(),
+  then: (resolve: (rows: any[]) => unknown) => Promise.resolve(dbRows).then(resolve),
   all: vi.fn(),
   get: vi.fn(),
   insert: vi.fn().mockReturnThis(),
@@ -29,43 +42,30 @@ vi.mock("@/db", () => ({
   getDb: vi.fn(() => mockDb),
 }));
 
-// Mock R2 bucket
-const mockBucket = {
-  put: vi.fn(),
-  get: vi.fn(),
-  delete: vi.fn(),
-} as any;
-
 describe("Images Endpoint - Error Scenarios", () => {
   let app: Hono<AppContext>;
 
   beforeEach(() => {
     app = new Hono<AppContext>();
-    
+
     // Add middleware to inject mock env and user
     app.use("*", async (c, next) => {
-      c.env = { 
+      c.env = {
         DB: mockDb,
-        IMAGES: mockBucket,
-        CF_ACCOUNT_ID: "test-account",
-        R2_ACCESS_KEY_ID: "test-key",
-        R2_SECRET_ACCESS_KEY: "test-secret",
-        R2_BUCKET_NAME: "test-bucket",
-        MEDIA_DOMAIN: "media.example.com",
       } as any;
       c.set("user", { id: "user-123", email: "test@example.com" } as any);
       await next();
     });
-    
+
     app.onError(errorHandler);
     app.post("/api/images/upload", handlers.uploadImage);
-    app.post("/api/images/presign", presignUpload);
     app.get("/images/:key{.+}", handlers.serveImage);
     app.get("/api/products/:id/images", handlers.listProductImages);
     app.post("/api/products/:id/images", handlers.saveProductImage);
     app.delete("/api/products/:id/images/:imageId", handlers.deleteProductImage);
-    
+
     vi.clearAllMocks();
+    dbRows = [];
   });
 
   describe("POST /api/images/upload", () => {
@@ -136,13 +136,13 @@ describe("Images Endpoint - Error Scenarios", () => {
       expect(body.context).toHaveProperty("fileName", "large-image.jpg");
     });
 
-    it("should return 500 with INTERNAL_SERVER_ERROR code when R2 upload fails", async () => {
+    it("should return 500 with INTERNAL_SERVER_ERROR code when Blob upload fails", async () => {
       const formData = new FormData();
       const file = new File(["test"], "test.jpg", { type: "image/jpeg" });
       formData.append("file", file);
 
-      // Mock R2 put to throw an error
-      mockBucket.put.mockRejectedValue(new Error("R2 connection failed"));
+      // Mock Blob put to throw an error
+      vi.mocked(blobPut).mockRejectedValue(new Error("Blob connection failed"));
 
       const res = await app.request("/api/images/upload", {
         method: "POST",
@@ -165,7 +165,10 @@ describe("Images Endpoint - Error Scenarios", () => {
       const file = new File(["test"], "test.jpg", { type: "image/jpeg" });
       formData.append("file", file);
 
-      mockBucket.put.mockResolvedValue(undefined);
+      vi.mocked(blobPut).mockResolvedValue({
+        url: "https://blob.example.com/products/abc123.jpg",
+        pathname: "products/abc123.jpg",
+      });
 
       const res = await app.request("/api/images/upload", {
         method: "POST",
@@ -178,14 +181,14 @@ describe("Images Endpoint - Error Scenarios", () => {
         success: true,
         data: expect.objectContaining({
           key: expect.stringMatching(/^products\/[a-f0-9]+\.jpg$/),
-          url: expect.stringContaining("/images/products/"),
+          url: "https://blob.example.com/products/abc123.jpg",
         }),
       });
     });
   });
 
   describe("GET /images/:key", () => {
-    it("should return 400 with REQUIRED_FIELD_MISSING code when key is missing", async () => {
+    it("should return 404 when the route does not match (missing key)", async () => {
       const res = await app.request("/images/", {
         method: "GET",
       });
@@ -211,8 +214,8 @@ describe("Images Endpoint - Error Scenarios", () => {
       expect(body.context).toHaveProperty("key");
     });
 
-    it("should return 404 with IMAGE_NOT_FOUND code when image does not exist in R2", async () => {
-      mockBucket.get.mockResolvedValue(null);
+    it("should return 404 with IMAGE_NOT_FOUND code when image does not exist in Blob", async () => {
+      vi.mocked(blobPublicUrl).mockResolvedValue(null);
 
       const res = await app.request("/images/products/nonexistent.jpg", {
         method: "GET",
@@ -231,24 +234,15 @@ describe("Images Endpoint - Error Scenarios", () => {
       });
     });
 
-    it("should return 200 with image data when image exists", async () => {
-      const mockImageBody = new ReadableStream();
-      mockBucket.get.mockResolvedValue({
-        body: mockImageBody,
-        httpEtag: '"abc123"',
-        writeHttpMetadata: (headers: Headers) => {
-          headers.set("Content-Type", "image/jpeg");
-        },
-      });
+    it("should 301-redirect to the Blob CDN URL when image exists", async () => {
+      vi.mocked(blobPublicUrl).mockResolvedValue("https://blob.example.com/products/test.jpg");
 
       const res = await app.request("/images/products/test.jpg", {
         method: "GET",
       });
 
-      expect(res.status).toBe(200);
-      expect(res.headers.get("Content-Type")).toBe("image/jpeg");
-      expect(res.headers.get("ETag")).toBe('"abc123"');
-      expect(res.headers.get("Cache-Control")).toBe("public, max-age=31536000, immutable");
+      expect(res.status).toBe(301);
+      expect(res.headers.get("Location")).toBe("https://blob.example.com/products/test.jpg");
     });
   });
 
@@ -276,7 +270,7 @@ describe("Images Endpoint - Error Scenarios", () => {
     });
 
     it("should return 201 when image record is saved successfully", async () => {
-      mockDb.all.mockResolvedValue([]);
+      dbRows = [];
       mockDb.insert.mockReturnValue({
         values: vi.fn().mockResolvedValue(undefined),
       });
@@ -309,7 +303,7 @@ describe("Images Endpoint - Error Scenarios", () => {
 
   describe("DELETE /api/products/:id/images/:imageId", () => {
     it("should return 404 with IMAGE_NOT_FOUND code when image does not exist", async () => {
-      mockDb.get.mockResolvedValue(null);
+      dbRows = [];
 
       const res = await app.request("/api/products/prod_123/images/img_nonexistent", {
         method: "DELETE",
@@ -328,14 +322,16 @@ describe("Images Endpoint - Error Scenarios", () => {
       });
     });
 
-    it("should return 500 with INTERNAL_SERVER_ERROR code when R2 delete fails", async () => {
-      mockDb.get.mockResolvedValue({
-        id: "img_123",
-        productId: "prod_123",
-        r2Key: "products/abc123.jpg",
-        src: "https://example.com/images/products/abc123.jpg",
-      });
-      mockBucket.delete.mockRejectedValue(new Error("R2 delete failed"));
+    it("should return 500 with INTERNAL_SERVER_ERROR code when Blob delete fails", async () => {
+      dbRows = [
+        {
+          id: "img_123",
+          productId: "prod_123",
+          r2Key: "products/abc123.jpg",
+          src: "https://example.com/images/products/abc123.jpg",
+        },
+      ];
+      vi.mocked(blobDel).mockRejectedValue(new Error("Blob delete failed"));
 
       const res = await app.request("/api/products/prod_123/images/img_123", {
         method: "DELETE",
@@ -353,13 +349,15 @@ describe("Images Endpoint - Error Scenarios", () => {
     });
 
     it("should return 200 when image is deleted successfully", async () => {
-      mockDb.get.mockResolvedValue({
-        id: "img_123",
-        productId: "prod_123",
-        r2Key: "products/abc123.jpg",
-        src: "https://example.com/images/products/abc123.jpg",
-      });
-      mockBucket.delete.mockResolvedValue(undefined);
+      dbRows = [
+        {
+          id: "img_123",
+          productId: "prod_123",
+          r2Key: "products/abc123.jpg",
+          src: "https://example.com/images/products/abc123.jpg",
+        },
+      ];
+      vi.mocked(blobDel).mockResolvedValue(undefined);
       mockDb.delete.mockReturnValue({
         where: vi.fn().mockResolvedValue(undefined),
       });
@@ -373,70 +371,6 @@ describe("Images Endpoint - Error Scenarios", () => {
       expect(body).toMatchObject({
         success: true,
       });
-    });
-  });
-
-  describe("POST /api/images/presign", () => {
-    it("should return 400 with INVALID_FILE_TYPE code when content type is not allowed", async () => {
-      const res = await app.request("/api/images/presign", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          contentType: "application/pdf",
-        }),
-      });
-
-      expect(res.status).toBe(400);
-      const body: any = await res.json();
-      expect(body).toMatchObject({
-        error: "Invalid content type. Allowed: jpg, png, webp, gif",
-        code: ERROR_CODES.INVALID_FILE_TYPE,
-        category: ERROR_CATEGORIES.VALIDATION,
-      });
-      expect(body.context).toHaveProperty("contentType", "application/pdf");
-      expect(body.context).toHaveProperty("allowedTypes");
-    });
-
-    it("should return 500 with INTERNAL_SERVER_ERROR code when R2 credentials are missing", async () => {
-      // Create a new app instance with missing credentials
-      const appNoCredentials = new Hono<AppContext>();
-      
-      appNoCredentials.use("*", async (c, next) => {
-        c.env = { 
-          DB: mockDb,
-          IMAGES: mockBucket,
-          // Missing credentials
-          CF_ACCOUNT_ID: undefined,
-          R2_ACCESS_KEY_ID: undefined,
-          R2_SECRET_ACCESS_KEY: undefined,
-        } as any;
-        await next();
-      });
-      
-      appNoCredentials.onError(errorHandler);
-      appNoCredentials.post("/api/images/presign", presignUpload);
-
-      const res = await appNoCredentials.request("/api/images/presign", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          contentType: "image/jpeg",
-        }),
-      });
-
-      expect(res.status).toBe(500);
-      const body: any = await res.json();
-      expect(body).toMatchObject({
-        error: expect.stringContaining("R2 credentials not configured"),
-        code: ERROR_CODES.INTERNAL_SERVER_ERROR,
-        category: ERROR_CATEGORIES.SYSTEM,
-      });
-      expect(body.context).toHaveProperty("missingCredentials");
-      expect(Array.isArray(body.context.missingCredentials)).toBe(true);
     });
   });
 

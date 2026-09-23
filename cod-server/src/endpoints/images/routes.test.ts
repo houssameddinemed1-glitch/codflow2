@@ -1,6 +1,9 @@
 /**
- * Route-level integration tests for the Images routers.
- * Upload/presign run through the OpenAPIHono router; serve stays plain Hono.
+ * Route-level integration tests for the Images routers (Vercel Blob port).
+ * Upload runs through the OpenAPIHono router; serve 301-redirects via plain
+ * Hono. The S3 presign route is retired — direct browser uploads go through
+ * POST /api/images/blob-callback (plain Hono, SDK-driven shapes, untestable
+ * without the @vercel/blob client).
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
@@ -11,15 +14,13 @@ import { errorHandler } from "@/middleware/error";
 import { openApiValidationHook } from "@/openapi/validation-hook";
 import { ERROR_CODES } from "../../../../cod-shared/errors/codes";
 import { uploadRouter, serveRouter } from "./routes";
+import { blobPut, blobPublicUrl } from "@/lib/blob";
 
-vi.mock("@aws-sdk/client-s3", () => ({
-  S3Client: class {
-    constructor(_config?: unknown) {}
-  },
-  PutObjectCommand: vi.fn(),
-}));
-vi.mock("@aws-sdk/s3-request-presigner", () => ({
-  getSignedUrl: vi.fn(async () => "https://signed.example.com/upload"),
+vi.mock("@/lib/blob", () => ({
+  blobPut: vi.fn(),
+  blobDel: vi.fn(),
+  blobContentType: vi.fn(),
+  blobPublicUrl: vi.fn(),
 }));
 
 function makeFile(name: string, type: string, size = 10) {
@@ -28,26 +29,11 @@ function makeFile(name: string, type: string, size = 10) {
 
 describe("Images routes", () => {
   let app: OpenAPIHono<AppContext>;
-  let mockBucket: { put: ReturnType<typeof vi.fn>; get: ReturnType<typeof vi.fn> };
-  let testEnv: Record<string, unknown>;
 
   beforeEach(() => {
     app = new OpenAPIHono<AppContext>({ defaultHook: openApiValidationHook });
-    mockBucket = {
-      put: vi.fn(async () => undefined),
-      get: vi.fn(async () => null),
-    };
-    testEnv = {
-      DB: {},
-      IMAGES: mockBucket,
-      CF_ACCOUNT_ID: "acct",
-      R2_ACCESS_KEY_ID: "key",
-      R2_SECRET_ACCESS_KEY: "secret",
-      R2_BUCKET_NAME: "bucket",
-      MEDIA_DOMAIN: "cdn.example.com",
-    };
     app.use("*", async (c, next) => {
-      c.env = testEnv as any;
+      c.env = { DB: {} } as any;
       c.set("user", {
         id: "admin_user_001",
         email: "admin@example.com",
@@ -66,6 +52,10 @@ describe("Images routes", () => {
 
   describe("POST /api/images/upload", () => {
     it("uploads a valid image and returns key + url with 201", async () => {
+      vi.mocked(blobPut).mockResolvedValue({
+        url: "https://blob.example.com/products/abc.jpg",
+        pathname: "products/abc.jpg",
+      });
       const form = new FormData();
       form.append("file", makeFile("product.jpg", "image/jpeg"));
 
@@ -76,9 +66,9 @@ describe("Images routes", () => {
 
       expect(res.status).toBe(201);
       const body: any = await res.json();
-      expect(body.data.key).toMatch(/^products\/[a-f0-9]+\.jpg$/);
-      expect(body.data.url).toContain("/images/products/");
-      expect(mockBucket.put).toHaveBeenCalledTimes(1);
+      expect(body.data.key).toBe("products/abc.jpg");
+      expect(body.data.url).toBe("https://blob.example.com/products/abc.jpg");
+      expect(blobPut).toHaveBeenCalledTimes(1);
     });
 
     it("returns 400 INVALID_FILE_TYPE for a disallowed file type", async () => {
@@ -111,95 +101,30 @@ describe("Images routes", () => {
       const body: any = await res.json();
       expect(body.code).toBe(ERROR_CODES.FILE_TOO_LARGE);
     });
-  });
 
-  describe("POST /api/images/presign", () => {
-    it("returns presigned URL data with 200", async () => {
-      const res = await app.request("/api/images/presign", {
+    it("returns 500 when Blob storage fails", async () => {
+      vi.mocked(blobPut).mockRejectedValue(new Error("blob down"));
+      const form = new FormData();
+      form.append("file", makeFile("product.jpg", "image/jpeg"));
+
+      const res = await app.request("/api/images/upload", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contentType: "image/webp" }),
-      });
-
-      expect(res.status).toBe(200);
-      const body: any = await res.json();
-      expect(body.data.presignedUrl).toContain("https://signed");
-      expect(body.data.key).toMatch(/^products\/[a-f0-9]+\.webp$/);
-      expect(body.data.publicUrl).toBe(`https://cdn.example.com/${body.data.key}`);
-    });
-
-    it("returns 400 INVALID_FILE_TYPE for unsupported content types", async () => {
-      const res = await app.request("/api/images/presign", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contentType: "application/pdf" }),
-      });
-
-      expect(res.status).toBe(400);
-      const body: any = await res.json();
-      expect(body.code).toBe(ERROR_CODES.INVALID_FILE_TYPE);
-    });
-
-    it("folder=landing lands the key in the landing/ namespace", async () => {
-      const res = await app.request("/api/images/presign", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contentType: "image/jpeg", folder: "landing" }),
-      });
-
-      expect(res.status).toBe(200);
-      const body: any = await res.json();
-      expect(body.data.key).toMatch(/^landing\/[a-f0-9]+\.jpg$/);
-      expect(body.data.publicUrl).toBe(`https://cdn.example.com/${body.data.key}`);
-    });
-
-    it("rejects arbitrary folder values — clients cannot control key prefixes", async () => {
-      const res = await app.request("/api/images/presign", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contentType: "image/jpeg", folder: "../../etc" }),
-      });
-
-      // Rejected at the route's zod enum (VALIDATION_FAILED); the handler's
-      // allowlist check remains as defense-in-depth for non-route callers.
-      expect(res.status).toBe(400);
-      const body: any = await res.json();
-      expect(["VALIDATION_FAILED", "INVALID_FILE_TYPE"]).toContain(body.code);
-    });
-
-    it("returns 500 when R2 credentials are not configured", async () => {
-      delete testEnv.CF_ACCOUNT_ID;
-
-      const res = await app.request("/api/images/presign", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contentType: "image/jpeg" }),
+        body: form,
       });
 
       expect(res.status).toBe(500);
-      const body: any = await res.json();
-      expect(body.context.missingCredentials).toContain("CF_ACCOUNT_ID");
     });
   });
 
   describe("GET /images/{key} (public serving)", () => {
-    function r2Object(body: string) {
-      return {
-        body: new Response(body).body,
-        httpEtag: '"etag-1"',
-        writeHttpMetadata: (headers: Headers) => headers.set("Content-Type", "image/jpeg"),
-      };
-    }
-
-    it("serves an object with immutable cache headers", async () => {
-      mockBucket.get.mockResolvedValue(r2Object("binary"));
+    it("301-redirects to the Blob CDN URL", async () => {
+      vi.mocked(blobPublicUrl).mockResolvedValue("https://blob.example.com/products/abc.jpg");
 
       const res = await app.request("/images/products/abc.jpg");
 
-      expect(res.status).toBe(200);
-      expect(res.headers.get("Content-Type")).toBe("image/jpeg");
-      expect(res.headers.get("Cache-Control")).toContain("immutable");
-      expect(mockBucket.get).toHaveBeenCalledWith("products/abc.jpg");
+      expect(res.status).toBe(301);
+      expect(res.headers.get("Location")).toBe("https://blob.example.com/products/abc.jpg");
+      expect(blobPublicUrl).toHaveBeenCalledWith("products/abc.jpg");
     });
 
     it("rejects path traversal keys with 400", async () => {
@@ -211,7 +136,7 @@ describe("Images routes", () => {
     });
 
     it("returns 404 when the object does not exist", async () => {
-      mockBucket.get.mockResolvedValue(null);
+      vi.mocked(blobPublicUrl).mockResolvedValue(null);
 
       const res = await app.request("/images/products/missing.jpg");
 

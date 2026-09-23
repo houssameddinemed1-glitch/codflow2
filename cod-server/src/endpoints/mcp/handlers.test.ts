@@ -28,6 +28,10 @@ import type { Env } from "@/types/env";
 import type { AppContext } from "@/types/app";
 
 vi.mock("@/db", () => ({ getDb: () => dbMock }));
+// Last-used markers now resolve via the Upstash seam; bridge it to the
+// per-test OAUTH_KV map through this holder.
+vi.mock("@/lib/kv", () => ({ kvFromEnv: vi.fn(() => undefined) }));
+import { kvFromEnv } from "@/lib/kv";
 vi.mock("@/lib/activity", () => ({
   ACTIONS: {
     MCP_CONNECTION_REVOKED: "mcp.connection_revoked",
@@ -44,6 +48,8 @@ function drizzleThenable<T>(rows: T[]) {
   const thenable = {
     from: () => thenable,
     where: () => thenable,
+    // pg-convention: bare-awaited builders resolve to the row array.
+    then: (resolve: (rows: T[]) => unknown) => Promise.resolve(rows).then(resolve),
     all: async () => rows,
     get: async () => rows[0] ?? null,
   };
@@ -131,6 +137,9 @@ const admin = { id: "u1", name: "Ada", email: "ada@x.y", role: "admin" as const 
 beforeEach(() => {
   dbMock.select.mockReset();
   dbMock.select.mockImplementation(() => drizzleThenable([]));
+  // Each test bridges the marker seam to its own KV map explicitly.
+  vi.mocked(kvFromEnv).mockReset();
+  vi.mocked(kvFromEnv).mockReturnValue(undefined);
 });
 
 describe("GET /me", () => {
@@ -139,6 +148,8 @@ describe("GET /me", () => {
     const g2 = makeGrant({ id: "g2", clientId: "claude", userId: "u1", scope: ["customers:read"], createdAt: 1_700_100_000 });
     const { env, kv } = makeEnv({ grantsByUser: { u1: [g1, g2] }, clients: { claude: { clientName: "Claude" } } });
     kv.set("mcp-last-used:u1:g2", "2026-08-31T00:00:00.000Z");
+    // Markers resolve through the Upstash seam — bridge it to this test's KV map.
+    vi.mocked(kvFromEnv).mockReturnValue(env.OAUTH_KV as any);
 
     const res = await appWithUser(env, admin).request("/me", {}, env);
     expect(res.status).toBe(200);
@@ -199,6 +210,7 @@ describe("DELETE /connections/:clientId", () => {
     const g3 = makeGrant({ id: "g3", clientId: "other", userId: "u1" });
     const { env, kv, calls } = makeEnv({ grantsByUser: { u1: [g1, g2, g3] } });
     kv.set("mcp-last-used:u1:g1", "2026-08-31T00:00:00.000Z");
+    vi.mocked(kvFromEnv).mockReturnValue(env.OAUTH_KV as any);
 
     const res = await appWithUser(env, admin).request("/connections/claude", { method: "DELETE" }, env);
     expect(res.status).toBe(200);

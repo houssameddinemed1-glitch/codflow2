@@ -13,19 +13,24 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { getTiktokConfig, upsertTiktokConfig } from "./tiktok-config";
 
+/** pg-convention mock: drizzle builders are thenables resolving to row arrays. */
+function thenRows(row: unknown) {
+  const rows = row === undefined ? [] : [row];
+  return { then: (resolve: (rows: unknown[]) => unknown) => Promise.resolve(rows).then(resolve) };
+}
+
 function makeDb(row: unknown | undefined) {
-  const get = vi.fn(async () => row);
-  const returningGet = vi.fn(async () => row);
+  const returning = vi.fn(() => thenRows(row));
   const db = {
     select: vi.fn(() => ({
       from: vi.fn(() => ({
-        where: vi.fn(() => ({ get })),
+        where: vi.fn(() => thenRows(row)),
       })),
     })),
     update: vi.fn(() => ({
       set: vi.fn(() => ({
         where: vi.fn(() => ({
-          returning: vi.fn(() => ({ get: returningGet })),
+          returning,
         })),
       })),
     })),
@@ -33,13 +38,13 @@ function makeDb(row: unknown | undefined) {
       values: vi.fn(async () => undefined),
     })),
   } as any;
-  return { db, get, returningGet };
+  return { db, returning };
 }
 
 describe("getTiktokConfig", () => {
-  it("returns undefined when no row exists (tracking inert)", async () => {
+  it("returns null when no row exists (tracking inert)", async () => {
     const { db } = makeDb(undefined);
-    expect(await getTiktokConfig(db, "store-1")).toBeUndefined();
+    expect(await getTiktokConfig(db, "store-1")).toBeNull();
   });
 
   it("returns the full row — raw accessor for server-side senders", async () => {
@@ -75,7 +80,7 @@ describe("upsertTiktokConfig", () => {
     const { db } = makeDb({ accessToken: "tt-stored", conversionEvent: "Purchase" });
     const setSpy = vi.fn(() => ({
       where: vi.fn(() => ({
-        returning: vi.fn(() => ({ get: vi.fn(async () => ({})) })),
+        returning: vi.fn(() => thenRows({})),
       })),
     }));
     (db.update as any).mockReturnValue({ set: setSpy });

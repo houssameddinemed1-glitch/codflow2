@@ -116,11 +116,13 @@ describe("getGroupById", () => {
   });
 
   it("returns group with empty children and zero productsCount", async () => {
-    // productCategories.get → Promise.all[children.all, count.get]
+    // Execution order (not source order): the count query carries .then so it
+    // fires during Promise.all construction; the bare-awaited children select
+    // executes after. The positional mock follows execution order.
     const db = makeMockDb([
       f(categoryRow()),
-      a([]),           // children (Promise.all[0])
-      f({ count: 0 }), // productsCount (Promise.all[1])
+      f({ count: 0 }), // productsCount (executes first)
+      a([]),           // children (executes second)
     ]);
     const result = await getGroupById(db as any, "cat_1");
     expect(result).not.toBeNull();
@@ -133,8 +135,8 @@ describe("getGroupById", () => {
     const childCat = { ...categoryRow({ id: "cat_2", parent_id: "cat_1", slug: "child-cat_2" }) };
     const db = makeMockDb([
       f(categoryRow()),
-      a([childCat]),   // 1 child
       f({ count: 0 }),
+      a([childCat]),   // 1 child
     ]);
     const result = await getGroupById(db as any, "cat_1");
     expect(result!.children).toHaveLength(1);
@@ -143,8 +145,8 @@ describe("getGroupById", () => {
   it("returns correct productsCount", async () => {
     const db = makeMockDb([
       f(categoryRow()),
-      a([]),
       f({ count: 5 }),
+      a([]),
     ]);
     const result = await getGroupById(db as any, "cat_1");
     expect(result!.productsCount).toBe(5);
@@ -155,11 +157,11 @@ describe("getGroupById", () => {
 
 describe("createGroup", () => {
   it("creates and returns the new group", async () => {
-    // INSERT (run) → getGroupById: category.get → Promise.all[children.all, count.get]
+    // INSERT (run) → getGroupById in execution order: category, count, children.
     const db = makeMockDb([
       f(categoryRow()),
-      a([]),
       f({ count: 0 }),
+      a([]),
     ]);
     const result = await createGroup(db as any, { name: "إكسسوارات", position: 0 });
     expect(result).not.toBeNull();
@@ -169,8 +171,8 @@ describe("createGroup", () => {
   it("auto-generates slug from name when not provided", async () => {
     const db = makeMockDb([
       f(categoryRow({ slug: "ikssswarat-abc12345" })),
-      a([]),
       f({ count: 0 }),
+      a([]),
     ]);
     const result = await createGroup(db as any, { name: "إكسسوارات", position: 0 });
     expect(result!.slug).toBeDefined();
@@ -179,8 +181,8 @@ describe("createGroup", () => {
   it("uses provided slug when given", async () => {
     const db = makeMockDb([
       f(categoryRow({ slug: "accessories" })),
-      a([]),
       f({ count: 0 }),
+      a([]),
     ]);
     const result = await createGroup(db as any, {
       name: "Accessories",
@@ -195,11 +197,11 @@ describe("createGroup", () => {
 
 describe("updateGroup", () => {
   it("updates and returns the group", async () => {
-    // UPDATE (run) → getGroupById: category.get → Promise.all[children.all, count.get]
+    // UPDATE (run) → getGroupById in execution order: category, count, children.
     const db = makeMockDb([
       f(categoryRow({ name: "ملابس نسائية" })),
-      a([]),
       f({ count: 2 }),
+      a([]),
     ]);
     const result = await updateGroup(db as any, "cat_1", { name: "ملابس نسائية" });
     expect(result).not.toBeNull();

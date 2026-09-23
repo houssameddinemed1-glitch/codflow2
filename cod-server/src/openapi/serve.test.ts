@@ -707,7 +707,7 @@ describe("GET /api/openapi.json (merged spec)", () => {
       .toEqual(expect.arrayContaining(["driverId", "type", "orderIds"]));
   });
 
-  it("documents the migrated images upload/presign endpoints from Zod schemas", async () => {
+  it("documents the migrated images upload endpoint from Zod schemas", async () => {
     const app = buildApp();
     const res = await app.request("/api/openapi.json", {}, { WORKER_URL: "https://x" } as any);
     const spec: any = await res.json();
@@ -722,12 +722,14 @@ describe("GET /api/openapi.json (merged spec)", () => {
       upload.requestBody.content["multipart/form-data"].schema.properties.file
     ).toBeDefined();
 
-    const presign = spec.paths["/api/images/presign"]?.post;
-    expect(presign).toBeDefined();
-    expect(presign.operationId).toBe("presignUpload");
+    // S3 presign retired in the Blob port: /api/images/blob-callback is plain
+    // Hono (the SDK drives its shapes), so it stays out of the OpenAPI spec.
+    expect(spec.paths["/api/images/presign"]).toBeUndefined();
+    expect(spec.paths["/api/images/blob-callback"]).toBeUndefined();
 
     expect(spec.components.schemas.UploadedImage).toBeDefined();
-    expect(spec.components.schemas.PresignedUpload).toBeDefined();
+    // S3 presign schema retired with the route.
+    expect(spec.components.schemas.PresignedUpload).toBeUndefined();
   });
 
   it("documents the migrated orders endpoints from Zod schemas", async () => {

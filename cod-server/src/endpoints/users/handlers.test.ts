@@ -282,6 +282,8 @@ describe("Users Endpoint - Error Scenarios", () => {
       mockDb.select = vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
+            then: (resolve: (rows: unknown[]) => unknown) =>
+              Promise.resolve([{ id: "existing-id" }]).then(resolve),
             get: vi.fn().mockResolvedValue({ id: "existing-id" }),
           }),
         }),
@@ -311,6 +313,7 @@ describe("Users Endpoint - Error Scenarios", () => {
       mockDb.select = vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
+            then: (resolve: (rows: unknown[]) => unknown) => Promise.resolve([]).then(resolve),
             get: vi.fn().mockResolvedValue(undefined),
           }),
         }),
@@ -359,6 +362,7 @@ describe("Users Endpoint - Error Scenarios", () => {
       mockDb.select = vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
+            then: (resolve: (rows: unknown[]) => unknown) => Promise.resolve([]).then(resolve),
             get: vi.fn().mockResolvedValue(undefined),
           }),
         }),

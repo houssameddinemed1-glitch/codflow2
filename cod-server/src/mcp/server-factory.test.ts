@@ -23,6 +23,8 @@ const mocks = vi.hoisted(() => ({
   buildToolsForUser: vi.fn(),
   getDb: vi.fn(() => ({})),
   getMcpAuthContext: vi.fn<() => { props: unknown } | undefined>(() => undefined),
+  // Rate limiting now resolves via the Upstash seam, not an env binding.
+  kvFromEnv: vi.fn(() => undefined),
 }));
 
 vi.mock("@/lib/activity", () => ({
@@ -41,6 +43,7 @@ vi.mock("agents/mcp/server", () => ({
   getMcpAuthContext: mocks.getMcpAuthContext,
   createMcpHandler: vi.fn(),
 }));
+vi.mock("@/lib/kv", () => ({ kvFromEnv: mocks.kvFromEnv }));
 
 import { createCodMcpServer } from "./server-factory";
 import type { McpProps } from "./props";
@@ -235,7 +238,8 @@ describe("createCodMcpServer", () => {
       get: async () => "9999",
       put: async () => undefined,
     };
-    const envWithKv = { DB: {}, RATE_LIMIT: kvStub } as unknown as Env;
+    mocks.kvFromEnv.mockReturnValue(kvStub);
+    const envWithKv = { DB: {} } as unknown as Env;
 
     const server = createCodMcpServer(envWithKv);
     const result = (await registeredHandler(server, "listCustomers")(
@@ -260,7 +264,8 @@ describe("createCodMcpServer", () => {
     mocks.buildToolsForUser.mockReturnValue({ listCustomers: safeTool });
     const get = vi.fn(async (key: string) => (key.includes("sub-anon") ? "9999" : null));
     const kvStub = { get, put: async () => undefined };
-    const envWithKv = { DB: {}, RATE_LIMIT: kvStub } as unknown as Env;
+    mocks.kvFromEnv.mockReturnValue(kvStub);
+    const envWithKv = { DB: {} } as unknown as Env;
 
     const server = createCodMcpServer(envWithKv);
     const ctx = makeCtx();

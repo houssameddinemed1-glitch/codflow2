@@ -21,6 +21,11 @@ const mockDb = {
   from: vi.fn().mockReturnThis(),
   where: vi.fn().mockReturnThis(),
   get: vi.fn(),
+  // pg-convention: builders are thenables; resolve from whatever get() is set to.
+  then: (resolve: (rows: any[]) => unknown) =>
+    (mockDb.get() as Promise<any>).then((row) =>
+      resolve(row === undefined || row === null ? [] : [row]),
+    ),
 } as any;
 
 vi.mock("@/db", () => ({

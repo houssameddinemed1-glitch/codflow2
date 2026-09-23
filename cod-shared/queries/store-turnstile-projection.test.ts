@@ -16,14 +16,18 @@ const STORE_ROW = {
   status: "active",
 };
 
+/** pg-convention mock: drizzle builders are thenables resolving to row arrays. */
+function thenRows(row: unknown) {
+  const rows = row === undefined ? [] : [row];
+  return { then: (resolve: (rows: unknown[]) => unknown) => Promise.resolve(rows).then(resolve) };
+}
+
 function makeDb(rows: unknown[]) {
   const queue = [...rows];
   const db = {
     select: vi.fn(() => ({
       from: vi.fn(() => ({
-        where: vi.fn(() => ({
-          get: vi.fn(async () => queue.shift()),
-        })),
+        where: vi.fn(() => thenRows(queue.shift())),
       })),
     })),
   } as any;

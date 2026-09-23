@@ -122,6 +122,8 @@ describe("Users routes (OpenAPIHono)", () => {
       mockDb.select.mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
+            // pg-convention: builders are thenables resolving to row arrays.
+            then: (resolve: (rows: unknown[]) => unknown) => Promise.resolve([]).then(resolve),
             get: vi.fn().mockResolvedValue(undefined),
           }),
         }),
@@ -153,6 +155,8 @@ describe("Users routes (OpenAPIHono)", () => {
       mockDb.select.mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
+            then: (resolve: (rows: unknown[]) => unknown) =>
+              Promise.resolve([{ id: "existing_user" }]).then(resolve),
             get: vi.fn().mockResolvedValue({ id: "existing_user" }),
           }),
         }),

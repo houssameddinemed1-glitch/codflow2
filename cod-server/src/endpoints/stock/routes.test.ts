@@ -26,10 +26,13 @@ let mockDb: any;
 
 /** Minimal chainable drizzle stub for handler-level selects (e.g. product-name lookup). */
 function dbSelectReturning(result: any) {
+  // pg-convention: builders are thenables; keep get for legacy call sites.
+  const rows = result ? [result] : [];
   return {
     select: vi.fn(() => ({
       from: vi.fn(() => ({
         where: vi.fn(() => ({
+          then: (resolve: (rows: any[]) => unknown) => Promise.resolve(rows).then(resolve),
           get: vi.fn(async () => result),
         })),
       })),

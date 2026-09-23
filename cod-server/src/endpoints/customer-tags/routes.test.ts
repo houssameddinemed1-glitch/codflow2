@@ -279,6 +279,9 @@ describe("Customer Tags routes (OpenAPIHono)", () => {
       mockDb.select.mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
+            // pg-convention: builders are thenables resolving to row arrays.
+            then: (resolve: (rows: unknown[]) => unknown) =>
+              Promise.resolve([{ id: "cust_123" }]).then(resolve),
             get: vi.fn().mockResolvedValue({ id: "cust_123" }),
           }),
         }),

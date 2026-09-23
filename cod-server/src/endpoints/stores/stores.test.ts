@@ -48,10 +48,10 @@ function storeRow(overrides: Record<string, any> = {}) {
 // ─── Query logic ───────────────────────────────────────────────────────────────
 
 describe("getStore", () => {
-  it("returns undefined when store doesn't exist", async () => {
+  it("returns null when store doesn't exist", async () => {
     const db = makeMockDb([f(null)]);
     const result = await getStore(db);
-    expect(result).toBeUndefined();
+    expect(result).toBeNull();
   });
 
   it("returns store when it exists", async () => {

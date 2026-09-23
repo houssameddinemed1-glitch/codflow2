@@ -1,9 +1,9 @@
 /**
- * CAPI Lead workflow trigger — drives the real createStoreOrder handler
- * through the mounted store router, pinning:
- *   - every order creates a durable Lead Workflow (id capi-{orderId}-Lead)
- *   - creation runs via executionCtx.waitUntil (runtime-safe after response)
- *   - a failing/missing workflow binding never blocks the order (201)
+ * CAPI Lead trigger — drives the real createStoreOrder handler through the
+ * mounted store router, pinning the QStash port of the old durable workflow:
+ *   - every order publishes a "capi" job (dedup capi-{orderId}-checkout-{event})
+ *   - publishing is awaited inline and fail-open (a rejection never blocks 201)
+ *   - pixel disabled → no publish, order still 201
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
@@ -13,13 +13,24 @@ import { errorHandler } from "@/middleware/error";
 import { openApiValidationHook } from "@/openapi/validation-hook";
 import storeRouter from "./routes";
 import * as storeQueries from "./queries";
+import { publishWorkflow } from "@/lib/queue";
 
-vi.mock("@/db", () => ({ getDb: vi.fn(() => ({})) }));
+vi.mock("@/db", () => ({ getDb: vi.fn(() => testDb) }));
 vi.mock("./queries");
+vi.mock("@/lib/queue", () => ({ publishWorkflow: vi.fn(async () => true) }));
 vi.mock("../../../../cod-shared/queries/otp-config", () => ({
   getOtpConfigRaw: vi.fn(async () => undefined),
 }));
 vi.mock("../../../../cod-shared/queries/turnstile-config");
+vi.mock("../../../../cod-shared/queries/pixel-config", () => ({
+  getPixelConfig: vi.fn(async () => undefined),
+}));
+vi.mock("../../../../cod-shared/queries/tiktok-config", () => ({
+  getTiktokConfig: vi.fn(async () => undefined),
+}));
+import { getPixelConfig } from "../../../../cod-shared/queries/pixel-config";
+
+let testDb: any;
 
 function orderBody(overrides: Record<string, unknown> = {}) {
   return {
@@ -38,10 +49,22 @@ function orderBody(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function makeApp(workflow?: { create: ReturnType<typeof vi.fn> }) {
+function makeApp() {
   const app = new OpenAPIHono<AppContext>({ defaultHook: openApiValidationHook });
+  // Functional db stub: config lookups run (returning no rows) so the mocked
+  // getPixelConfig decides the mode; store-domain lookup resolves empty.
+  // getDb is mocked to return this stub (c.env.DB is bypassed by the mock).
+  testDb = {
+    select: vi.fn(() => ({
+      from: vi.fn(() => ({
+        where: vi.fn(() => ({
+          then: (resolve: (rows: unknown[]) => unknown) => Promise.resolve([]).then(resolve),
+        })),
+      })),
+    })),
+  };
   app.use("*", async (c, next) => {
-    c.env = { DB: {}, ...(workflow ? { CAPI_WORKFLOW: workflow } : {}) } as any;
+    c.env = { DB: testDb } as any;
     c.set("storeId", "store-1");
     await next();
   });
@@ -61,6 +84,8 @@ function stubSuccessfulOrderFlow() {
     price: 2500,
     deliveryFee: 600,
   } as any);
+  // Lead mode fires a Lead event at checkout.
+  vi.mocked(getPixelConfig).mockResolvedValue({ conversionEvent: "Lead", enabled: true } as any);
 }
 
 async function placeOrder(
@@ -99,48 +124,53 @@ beforeEach(() => {
   stubSuccessfulOrderFlow();
 });
 
-describe("CAPI checkout workflow trigger", () => {
-  it("creates a durable CAPI workflow for order at checkout, via waitUntil", async () => {
-    const workflow = { create: vi.fn(async () => ({ id: "capi-ord-1-checkout-Purchase" })) };
+describe("CAPI checkout trigger (QStash)", () => {
+  type PublishCall = [string, Record<string, unknown>, string];
+  const capiCalls = () =>
+    (vi.mocked(publishWorkflow).mock.calls as unknown as PublishCall[]).filter(
+      ([kind]) => kind === "capi",
+    );
+
+  it("publishes a capi job for the order at checkout", async () => {
     const before = Math.floor(Date.now() / 1000);
 
-    const res = await placeOrder(makeApp(workflow));
-
-    expect(res.status).toBe(201);
-    expect(workflow.create).toHaveBeenCalledOnce();
-    const call = workflow.create.mock.calls[0] as unknown as [
-      { id: string; params: Record<string, unknown> }
-    ];
-    const { id, params } = call[0];
-    expect(id).toBe("capi-ord-1-checkout-Purchase");
-    expect(params.orderId).toBe("ord-1");
-    expect(params.eventName).toBe("Purchase");
-    expect(params.stage).toBe("checkout");
-    expect(params.triggerStatus).toBe("order_created");
-    expect(params.eventSourceUrl).toBe("https://shop.example/prod");
-    expect(params.triggeredAt).toBeGreaterThanOrEqual(before);
-    expect(params.triggeredAt).toBeLessThanOrEqual(Math.floor(Date.now() / 1000));
-  });
-
-  it("still returns 201 when workflow creation rejects", async () => {
-    const workflow = { create: vi.fn(async () => { throw new Error("Workflows API down"); }) };
-
-    const res = await placeOrder(makeApp(workflow));
-
-    expect(res.status).toBe(201);
-    expect(workflow.create).toHaveBeenCalledOnce();
-  });
-
-  it("still returns 201 when the CAPI_WORKFLOW binding is absent", async () => {
     const res = await placeOrder(makeApp());
 
     expect(res.status).toBe(201);
+    expect(capiCalls()).toHaveLength(1);
+    const [kind, payload, dedupId] = capiCalls()[0];
+    expect(kind).toBe("capi");
+    expect(dedupId).toBe("capi-ord-1-checkout-Lead");
+    expect(payload.orderId).toBe("ord-1");
+    expect(payload.eventName).toBe("Lead");
+    expect(payload.stage).toBe("checkout");
+    expect(payload.triggerStatus).toBe("order_created");
+    expect(payload.eventSourceUrl).toBe("https://shop.example/prod");
+    expect(payload.triggeredAt).toBeGreaterThanOrEqual(before);
+    expect(payload.triggeredAt).toBeLessThanOrEqual(Math.floor(Date.now() / 1000));
+  });
+
+  it("still returns 201 when publishing rejects (fail-open)", async () => {
+    vi.mocked(publishWorkflow).mockRejectedValueOnce(new Error("QStash down"));
+
+    const res = await placeOrder(makeApp());
+
+    expect(res.status).toBe(201);
+    expect(capiCalls()).toHaveLength(1);
+  });
+
+  it("publishes no capi job when the mode defers past checkout, order still 201", async () => {
+    // Purchase_Confirmed fires at phone confirmation, never at checkout.
+    vi.mocked(getPixelConfig).mockResolvedValue({ conversionEvent: "Purchase_Confirmed", enabled: true } as any);
+
+    const res = await placeOrder(makeApp());
+
+    expect(res.status).toBe(201);
+    expect(capiCalls()).toHaveLength(0);
   });
 
   it("normalizes an E.164 phone to the canonical local form before storing", async () => {
-    const workflow = { create: vi.fn(async () => ({})) };
-
-    const res = await placeOrder(makeApp(workflow));
+    const res = await placeOrder(makeApp());
 
     expect(res.status).toBe(201);
     const orderArg = vi.mocked(storeQueries.createStoreOrder).mock.calls[0][1];

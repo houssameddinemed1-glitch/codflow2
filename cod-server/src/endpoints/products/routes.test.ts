@@ -40,12 +40,16 @@ const NOW = new Date().toISOString();
 let mockDb: any;
 
 function dbSelectReturning(result: any) {
+  // pg-convention: builders are thenables; keep get/all for legacy call sites.
+  const rows = result ? [result] : [];
+  const then = (resolve: (rows: any[]) => unknown) => Promise.resolve(rows).then(resolve);
   return {
     select: vi.fn(() => ({
       from: vi.fn(() => ({
         where: vi.fn(() => ({
+          then,
           get: vi.fn(async () => result),
-          all: vi.fn(async () => (result ? [result] : [])),
+          all: vi.fn(async () => rows),
         })),
       })),
     })),

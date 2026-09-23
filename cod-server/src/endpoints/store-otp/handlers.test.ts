@@ -20,6 +20,9 @@ import { verifyOtpToken } from "./token";
 
 vi.mock("@/db", () => ({ getDb: vi.fn(() => ({})) }));
 vi.mock("../../../../cod-shared/queries/otp-config");
+// Rate-limit KV now resolves via the Upstash seam (kvFromEnv), not an env binding.
+vi.mock("@/lib/kv", () => ({ kvFromEnv: vi.fn(() => undefined) }));
+import { kvFromEnv } from "@/lib/kv";
 
 const API_KEY = "dz-config-key";
 
@@ -185,6 +188,7 @@ describe("POST /store/otp/send", () => {
       get: vi.fn(async (key: string) => (key.includes("otp:cd:") ? String(Math.floor(Date.now() / 1000) + 30) : null)),
       put: vi.fn(async () => undefined),
     } as unknown as KVNamespace;
+    vi.mocked(kvFromEnv).mockReturnValue(kv as any);
 
     const res = await makeApp(kv).request("/store/otp/send", {
       method: "POST",
@@ -207,6 +211,7 @@ describe("POST /store/otp/send", () => {
       get: vi.fn(async () => { throw new Error("kv down"); }),
       put: vi.fn(async () => { throw new Error("kv down"); }),
     } as unknown as KVNamespace;
+    vi.mocked(kvFromEnv).mockReturnValue(kv as any);
 
     const res = await makeApp(kv).request("/store/otp/send", {
       method: "POST",
