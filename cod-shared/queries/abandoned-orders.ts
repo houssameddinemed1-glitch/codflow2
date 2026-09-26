@@ -107,6 +107,11 @@ export async function markAbandonedOrderConverted(
   orderNumber: string
 ): Promise<void> {
   const now = new Date().toISOString();
+  const row = await db
+    .select({ phone: abandonedOrders.phone })
+    .from(abandonedOrders)
+    .where(eq(abandonedOrders.sessionId, sessionId))
+    .then((r) => r[0] ?? null);
   await db
     .update(abandonedOrders)
     .set({
@@ -118,10 +123,23 @@ export async function markAbandonedOrderConverted(
     .where(
       and(
         eq(abandonedOrders.sessionId, sessionId),
-        // Idempotent: don't re-update if already converted
         sql`${abandonedOrders.status} != 'converted'`
       )
     );
+  // Deduplicate: if this phone had other pending/abandoned checkouts, they are
+  // now stale — the customer did order, so remove the duplicates to avoid the
+  // "هنوس pending + converted" confusion. Keep only this converted row.
+  if (row?.phone) {
+    await db
+      .delete(abandonedOrders)
+      .where(
+        and(
+          eq(abandonedOrders.phone, row.phone),
+          sql`${abandonedOrders.sessionId} != ${sessionId}`,
+          sql`${abandonedOrders.status} IN ('pending','abandoned')`
+        )
+      );
+  }
 }
 
 /** Cron: flip pending → abandoned for records older than 30 minutes. Returns count. */
