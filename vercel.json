@@ -5,5 +5,5 @@
   "outputDirectory": "public",
   "framework": null,
   "rewrites": [{ "source": "/(.*)", "destination": "/api" }],
-  "crons": [{ "path": "/api/cron", "schedule": "*/30 * * * *" }]
+  "crons": [{ "path": "/api/cron", "schedule": "0 0 * * *" }]
 }
