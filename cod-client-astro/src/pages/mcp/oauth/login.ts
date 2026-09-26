@@ -3,7 +3,7 @@ import { buildAuthEnvFromProcessEnv, createAuth } from "@/lib/auth/server";
 import {
   mintLoginTicket,
   LOGIN_TICKET_MIN_KEY_BYTES,
-} from "../../../../../cod-shared/lib/login-ticket";
+} from "@/lib/login-ticket";
 
 export const prerender = false;
 
