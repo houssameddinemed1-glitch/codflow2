@@ -130,7 +130,9 @@ export class NoestProvider implements DeliveryProvider {
 
     if (!res.tracking) {
       const detail = flattenErrorBag(res.errors);
-      throw new Error(detail ?? res.message ?? "NOEST did not return a tracking number");
+      const full = detail ?? res.message ?? "NOEST did not return a tracking number";
+      console.error("[noest] create failed", JSON.stringify({ payload, response: res }, null, 2));
+      throw new Error(full);
     }
 
     return {
