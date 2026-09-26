@@ -28,6 +28,7 @@ import { useLocale, useT } from "@/i18n/react";
 import { getDashboardStats } from "@/features/dashboard/api";
 import { fillStatusStats } from "@/features/dashboard/model";
 import { getTracking, listOrders } from "@/features/orders/api";
+import { getOrderSource, OrderSourceIcon } from "@/features/orders/components/OrderSourceIcon";
 import { formatMoney, orderTotal } from "@/features/orders/model";
 import type { OrderListItem, OrderStatus } from "@/features/orders/types";
 
@@ -284,8 +285,9 @@ function DashboardOverview() {
                     className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/50 sm:px-5"
                   >
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-semibold text-link">
+                      <span className="inline-flex items-center gap-1.5 truncate text-sm font-semibold text-link">
                         {order.orderNumber}
+                        <OrderSourceIcon source={getOrderSource(order)} size={16} />
                       </span>
                       <span className="block truncate text-xs text-muted-foreground">
                         {order.customerName}

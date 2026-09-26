@@ -15,21 +15,25 @@ export function getOrderSource(order: Pick<OrderBase, "fbc" | "fbp" | "ttclid" |
   return "direct";
 }
 
-export function OrderSourceIcon({ source, size = 14 }: { source: OrderSource; size?: number }) {
-  const props = { size, className: "shrink-0" };
+export function OrderSourceIcon({ source, size = 16 }: { source: OrderSource; size?: number }) {
+  const iconSize = Math.max(12, size - 6);
+  const wrap = "grid place-items-center shrink-0 rounded-full text-white shadow-sm";
+  const box = `size-[${size}px]`.replace("[", "").replace("]", "");
+  // Use fixed sizes for Tailwind purge safety
+  const sizeClass = size >= 20 ? "size-6" : size >= 18 ? "size-[18px]" : "size-5";
   switch (source) {
     case "facebook":
-      return <Users {...props} className="shrink-0 text-[#1877F2]" />;
+      return <span className={`${sizeClass} ${wrap} bg-[#1877F2]`}><Users size={iconSize} className="text-white" /></span>;
     case "tiktok":
-      return <Music2 {...props} className="shrink-0 text-black dark:text-white" />;
+      return <span className={`${sizeClass} ${wrap} bg-black`}><Music2 size={iconSize} className="text-white" /></span>;
     case "instagram":
-      return <span className="grid size-3.5 place-items-center rounded-sm bg-gradient-to-br from-purple-500 via-pink-500 to-orange-400 text-[8px] font-bold text-white">IG</span>;
+      return <span className={`${sizeClass} ${wrap} bg-gradient-to-br from-purple-500 via-pink-500 to-orange-400 text-[9px] font-black`}>IG</span>;
     case "google":
-      return <Search {...props} className="shrink-0 text-[#4285F4]" />;
+      return <span className={`${sizeClass} ${wrap} bg-white border border-border`}><Search size={iconSize} className="text-[#4285F4]" /></span>;
     case "landing":
-      return <LayoutGrid {...props} className="shrink-0 text-violet-500" />;
+      return <span className={`${sizeClass} ${wrap} bg-violet-500`}><LayoutGrid size={iconSize} className="text-white" /></span>;
     default:
-      return <Globe {...props} className="shrink-0 text-muted-foreground" />;
+      return <span className={`${sizeClass} ${wrap} bg-muted border border-border`}><Globe size={iconSize} className="text-muted-foreground" /></span>;
   }
 }
 

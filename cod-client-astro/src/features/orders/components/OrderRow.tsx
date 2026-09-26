@@ -53,7 +53,9 @@ export function OrderDesktopRow({ order, drivers, companies, onChanged, onError,
             <PackageOpen size={14} />
           </span>
           {order.orderNumber}
-          <OrderSourceIcon source={getOrderSource(order)} size={14} />
+          <span title={getOrderSource(order)}>
+            <OrderSourceIcon source={getOrderSource(order)} size={20} />
+          </span>
           {(order.hasReview ?? 0) > 0 && (
             <Star size={12} className="fill-warning text-warning" />
           )}
@@ -125,10 +127,10 @@ export function OrderMobileCard({ order, drivers, companies, onChanged, onError,
           <div className="flex items-center gap-1.5">
             <a
               href={`/orders/${order.id}`}
-              className="inline-flex items-center gap-1 text-sm font-semibold text-link hover:underline"
+              className="inline-flex items-center gap-1.5 text-sm font-semibold text-link hover:underline"
             >
               {order.orderNumber}
-              <OrderSourceIcon source={getOrderSource(order)} size={12} />
+              <OrderSourceIcon source={getOrderSource(order)} size={18} />
             </a>
             {(order.hasReview ?? 0) > 0 && (
               <Star size={12} className="fill-warning text-warning" />
