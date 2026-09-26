@@ -191,10 +191,17 @@ export async function dispatchToCompany(c: Context<AppContext>) {
 
   const startMs = Date.now();
   try {
-    // Build product description: unique product names joined, append order number
-    const uniqueProductNames = [...new Set((order.products ?? []).map((p) => p.productName).filter(Boolean))];
-    const productDescription = uniqueProductNames.length > 0
-      ? `${uniqueProductNames.join(", ")} — ${order.orderNumber}`
+    // Build product description: include variant/color so carrier sees it in REMARQUE & PRODUITS
+    const productParts = (order.products ?? []).map((p) => {
+      const base = p.productName || "";
+      const variant = (p as { variantLabel?: string | null }).variantLabel;
+      const withVariant = variant ? `${base} (${variant})` : base;
+      const qty = (p as { quantity?: number }).quantity;
+      return qty && qty > 1 ? `${withVariant} x${qty}` : withVariant;
+    }).filter(Boolean);
+    const uniqueProductParts = [...new Set(productParts)];
+    const productDescription = uniqueProductParts.length > 0
+      ? `${uniqueProductParts.join(", ")} — ${order.orderNumber}`
       : order.orderNumber;
 
     const fallbackAddress = order.address?.trim() ? order.address : communeName;
@@ -525,6 +532,12 @@ export async function bulkDispatch(c: Context<AppContext>) {
       if (carrierCommune) communeName = carrierCommune;
     }
 
+    const bulkProductParts = (order.products ?? []).map((p: { productName?: string; variantLabel?: string | null; quantity?: number }) => {
+      const base = p.productName || "";
+      const withVariant = p.variantLabel ? `${base} (${p.variantLabel})` : base;
+      return p.quantity && p.quantity > 1 ? `${withVariant} x${p.quantity}` : withVariant;
+    }).filter(Boolean);
+    const bulkProductDescription = bulkProductParts.length > 0 ? `${[...new Set(bulkProductParts)].join(", ")} — ${order.orderNumber}` : order.orderNumber;
     validOrders.push({
       order,
       input: {
@@ -536,7 +549,7 @@ export async function bulkDispatch(c: Context<AppContext>) {
         wilaya: wilayaName,
         commune: communeName,
         amount: order.price + (order.deliveryFee ?? 0),
-        productDescription: order.orderNumber,
+        productDescription: bulkProductDescription,
         weight: order.weight ?? 1,
         stopDesk: order.deliveryType === "stop_desk",
         stationCode: order.stationCode ?? undefined,
