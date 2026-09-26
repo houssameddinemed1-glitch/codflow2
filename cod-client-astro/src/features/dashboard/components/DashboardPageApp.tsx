@@ -27,7 +27,7 @@ import {
 import { useLocale, useT } from "@/i18n/react";
 import { getDashboardStats } from "@/features/dashboard/api";
 import { fillStatusStats } from "@/features/dashboard/model";
-import { listOrders } from "@/features/orders/api";
+import { getTracking, listOrders } from "@/features/orders/api";
 import { formatMoney, orderTotal } from "@/features/orders/model";
 import type { OrderListItem, OrderStatus } from "@/features/orders/types";
 
@@ -86,6 +86,7 @@ function DashboardOverview() {
   > | null>(null);
   const [recent, setRecent] = useState<OrderListItem[] | null>(null);
   const [error, setError] = useState<Error | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   async function load() {
     setError(null);
@@ -107,17 +108,56 @@ function DashboardOverview() {
     if (canScope(identity, "dashboard:view")) void load();
   }, [identity?.role, identity?.scopes.join(",")]);
 
+  async function refreshNoest() {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      const res = await listOrders({ limit: 100, offset: 0 });
+      const toRefresh = res.data.filter(
+        (o) => o.trackingNumber && ["dispatched", "out_for_delivery"].includes(o.status),
+      );
+      if (toRefresh.length === 0) {
+        setRefreshing(false);
+        return;
+      }
+      const results = await Promise.allSettled(toRefresh.map((o) => getTracking(o.id)));
+      const ok = results.filter((r) => r.status === "fulfilled").length;
+      await load();
+      const { toast } = await import("react-hot-toast");
+      toast.success(`${ok}/${toRefresh.length} shipments refreshed`);
+    } catch (cause) {
+      const { toast } = await import("react-hot-toast");
+      toast.error(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
   const header = (
     <PageHeader
       title={t("header.title")}
       subtitle={t("header.subtitle")}
       actions={
-        canScope(identity, "orders:create") ? (
-          <LinkButton href="/orders/new">
-            <Plus size={16} />
-            {t("recent_orders.new_order")}
-          </LinkButton>
-        ) : undefined
+        <div className="flex items-center gap-2">
+          {canScope(identity, "orders:read") && (
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={refreshing}
+              onClick={() => void refreshNoest()}
+              title="Refresh NOEST tracking for all dispatched orders"
+            >
+              <RefreshCw size={16} className={refreshing ? "animate-spin" : ""} />
+              {refreshing ? "..." : "Refresh NOEST"}
+            </Button>
+          )}
+          {canScope(identity, "orders:create") && (
+            <LinkButton href="/orders/new">
+              <Plus size={16} />
+              {t("recent_orders.new_order")}
+            </LinkButton>
+          )}
+        </div>
       }
     />
   );
