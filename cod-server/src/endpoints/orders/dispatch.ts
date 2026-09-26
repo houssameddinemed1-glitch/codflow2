@@ -97,6 +97,18 @@ export async function dispatchToCompany(c: Context<AppContext>) {
     );
   }
 
+  const effectiveDeliveryTypeForAddressCheck =
+    (body as Record<string, unknown>).deliveryType === "home" || (body as Record<string, unknown>).deliveryType === "stop_desk"
+      ? (body as Record<string, unknown>).deliveryType as "home" | "stop_desk"
+      : order.deliveryType;
+  if (effectiveDeliveryTypeForAddressCheck === "home" && !order.address?.trim()) {
+    throw new ValidationError(
+      "Address is required for home delivery — edit the order to add the street address",
+      ERROR_CODES.REQUIRED_FIELD_MISSING,
+      { orderId, field: "address" }
+    );
+  }
+
   // Resolve French names from reference tables — used by both NOEST (commune text) and ZR Express (territory search keyword).
   const [wilayaRow, communeRow] = await Promise.all([
     db.select({ name: wilayas.name }).from(wilayas).where(eq(wilayas.id, order.wilayaId)).then((rows) => rows[0] ?? null),
