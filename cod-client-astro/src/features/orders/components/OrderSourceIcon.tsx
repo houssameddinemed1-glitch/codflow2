@@ -1,4 +1,4 @@
-import { Facebook, Globe, LayoutGrid, Music2, Search } from "lucide-react";
+import { Globe, LayoutGrid, Music2, Search, Users } from "lucide-react";
 import type { OrderBase } from "@/features/orders/types";
 
 export type OrderSource = "facebook" | "tiktok" | "google" | "instagram" | "landing" | "direct";
@@ -19,7 +19,7 @@ export function OrderSourceIcon({ source, size = 14 }: { source: OrderSource; si
   const props = { size, className: "shrink-0" };
   switch (source) {
     case "facebook":
-      return <Facebook {...props} className="shrink-0 text-[#1877F2]" />;
+      return <Users {...props} className="shrink-0 text-[#1877F2]" />;
     case "tiktok":
       return <Music2 {...props} className="shrink-0 text-black dark:text-white" />;
     case "instagram":
