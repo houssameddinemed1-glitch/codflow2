@@ -6,6 +6,7 @@ import {
   canAssignOrder,
   canDeleteOrderFromDetail,
   canDispatchOrder,
+  canEditOrder,
   filterOrders,
   formatMoney,
   orderTotal,
@@ -314,5 +315,19 @@ describe("orders model", () => {
       "2",
     ]);
     expect(paginateOrders(rows, 2, 2).map((item) => item.id)).toEqual(["3"]);
+  });
+
+  it("allows editing before dispatch and locks it after", () => {
+    expect(canEditOrder(order({ status: "new" }))).toBe(true);
+    expect(canEditOrder(order({ status: "confirmed" }))).toBe(true);
+    expect(canEditOrder(order({ status: "ready" }))).toBe(true);
+    expect(canEditOrder(order({ status: "assigned" }))).toBe(true);
+    expect(
+      canEditOrder(order({ status: "new", trackingNumber: "TRK-1" })),
+    ).toBe(false);
+    expect(canEditOrder(order({ status: "dispatched" }))).toBe(false);
+    expect(canEditOrder(order({ status: "out_for_delivery" }))).toBe(false);
+    expect(canEditOrder(order({ status: "delivered" }))).toBe(false);
+    expect(canEditOrder(order({ status: "cancelled" }))).toBe(false);
   });
 });

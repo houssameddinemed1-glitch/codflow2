@@ -39,6 +39,41 @@ export const createOrderSchema = z.object({
   }
 });
 
+/**
+ * PATCH /orders/:id
+ * Edit an order before dispatch: customer info, destination, delivery
+ * preferences and product lines (incl. variant / price overrides).
+ * All fields optional — only provided fields are updated. When `products`
+ * is provided it replaces all lines; `price` is recomputed from the lines
+ * unless an explicit `price` override is given.
+ */
+export const updateOrderSchema = z.object({
+  customerName: z.string().min(1).optional(),
+  phone: z.string().regex(/^0[5-7]\d{8}$/, "Invalid Algerian phone number").optional(),
+  wilayaId: z.number().int().min(1).max(58).optional(),
+  communeId: z.string().min(1).optional(),
+  city: z.string().nullish(),
+  address: z.string().nullish(),
+  deliveryType: z.enum(["home", "stop_desk"]).optional(),
+  deliveryFee: z.number().min(0).optional(),
+  notes: z.string().max(2000).nullish(),
+  price: z.number().positive().optional(),
+  products: z.array(
+    z.object({
+      productId: z.string().min(1),
+      productName: z.string().min(1),
+      variantId: z.string().min(1).nullish(),
+      variantLabel: z.string().nullish(),
+      quantity: z.number().int().positive(),
+      pricePerUnit: z.number().min(0),
+    })
+  ).min(1, "At least one product is required").optional(),
+}).superRefine((data, ctx) => {
+  if (data.deliveryType === "home" && data.address !== undefined && !data.address?.trim()) {
+    ctx.addIssue({ code: "custom", path: ["address"], message: "Address is required for home delivery" });
+  }
+});
+
 export const ORDER_STATUSES = [
   "new",
   "confirmed",
@@ -123,3 +158,4 @@ export type AssignDriverInput = z.infer<typeof assignDriverSchema>;
 export type OrderFiltersInput = z.infer<typeof orderFiltersSchema>;
 export type ReturnOrderProductInput = z.infer<typeof returnOrderProductSchema>;
 export type UpdateInternalNoteInput = z.infer<typeof updateInternalNoteSchema>;
+export type UpdateOrderInput = z.infer<typeof updateOrderSchema>;

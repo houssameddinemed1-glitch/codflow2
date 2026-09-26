@@ -288,7 +288,8 @@
     "error_commune": "Please select a commune",
     "error_address": "Address is required for home delivery",
     "error_delivery_unavailable": "This delivery method is not available for the selected wilaya",
-    "new_order_subtitle": "Fill in the customer info and add products to create a new order"
+    "new_order_subtitle": "Fill in the customer info and add products to create a new order",
+    "error_fee": "Delivery fee must be 0 or more"
   },
   "nav_group": "Sales",
   "abandoned": {

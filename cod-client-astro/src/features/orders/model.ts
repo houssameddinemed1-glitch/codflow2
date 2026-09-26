@@ -275,6 +275,27 @@ export function canDeleteOrderFromDetail(status: OrderStatus): boolean {
   return status === "new" || status === "preparing";
 }
 
+export const EDITABLE_ORDER_STATUSES: OrderStatus[] = [
+  "new",
+  "confirmed",
+  "unreachable",
+  "no_answer_1",
+  "no_answer_2",
+  "no_answer_3",
+  "preparing",
+  "ready",
+  "assigned",
+];
+
+export function canEditOrder(
+  order: Pick<OrderListItem, "status" | "trackingNumber">,
+): boolean {
+  return (
+    !order.trackingNumber &&
+    EDITABLE_ORDER_STATUSES.includes(order.status)
+  );
+}
+
 export function orderStatusFlow(
   order: Pick<OrderListItem, "deliveryMethod" | "driverId" | "trackingNumber">,
 ): OrderStatus[] {

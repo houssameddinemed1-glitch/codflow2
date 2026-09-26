@@ -16,6 +16,7 @@ import * as shipmentOps from "./shipment-operations";
 
 import {
   createOrderSchema,
+  updateOrderSchema,
   updateOrderStatusSchema,
   assignDriverSchema,
   returnOrderProductSchema,
@@ -109,6 +110,33 @@ const createOrderRoute = defineRoute({
     },
   },
   handler: handlers.createOrder,
+});
+
+const updateOrderRoute = defineRoute({
+  method: "patch",
+  path: "/{id}",
+  auth: { scope: SCOPES.ORDERS_UPDATE },
+  tags: ["Orders"],
+  summary: "Edit order",
+  description: `Edits an order before dispatch: customer info, destination (wilaya/commune/address), delivery type/fee/notes, and product lines including variant and per-unit price overrides.
+
+When \`products\` is provided it replaces all lines; \`price\` is recomputed from the lines unless an explicit \`price\` override is given. Inventory diffs reconcile atomically.
+
+Rejected with 422 when the order already has a tracking number (ORDER_ALREADY_DISPATCHED) or is in a locked status (dispatched, out_for_delivery, delivered, returned, cancelled).`,
+  operationId: "updateOrder",
+  params: IdParamSchema,
+  body: updateOrderSchema,
+  responses: {
+    200: {
+      description: "Order updated",
+      content: jsonContent(MessageResponseSchema),
+    },
+    422: {
+      description:
+        "Order cannot be edited — already dispatched or in a locked status",
+    },
+  },
+  handler: handlers.updateOrder,
 });
 
 const deleteOrderRoute = defineRoute({
@@ -719,6 +747,7 @@ router.openapi(bulkDispatchRoute.route, bulkDispatchRoute.handler);
 
 router.openapi(getOrderRoute.route, getOrderRoute.handler);
 router.openapi(createOrderRoute.route, createOrderRoute.handler);
+router.openapi(updateOrderRoute.route, updateOrderRoute.handler);
 router.openapi(deleteOrderRoute.route, deleteOrderRoute.handler);
 router.openapi(bulkDeleteOrdersRoute.route, bulkDeleteOrdersRoute.handler);
 router.openapi(updateStatusRoute.route, updateStatusRoute.handler);

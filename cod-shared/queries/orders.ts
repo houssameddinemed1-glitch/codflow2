@@ -21,6 +21,8 @@ import {
   companyShipments,
   companyApiLogs,
   webhookEvents,
+  capiEventLog,
+  tiktokEventLog,
 } from "../db/schema.pg";
 import type { OrderStatus } from "../db/schema.pg";
 import {
@@ -867,12 +869,15 @@ export async function deleteOrder(db: PgDb, orderId: string) {
     }
   }
 
-  // Delete related records. company_api_logs and webhook_events reference
-  // orders(id) with ON DELETE no action — they must be removed explicitly or
-  // the final orders delete fails the FOREIGN KEY constraint. Reviews and
-  // order_status_history cascade at the database level.
+  // Delete related records. company_api_logs, webhook_events, capi_event_log
+  // and tiktok_event_log reference orders(id) with ON DELETE no action —
+  // they must be removed explicitly or the final orders delete fails the
+  // FOREIGN KEY constraint. Reviews and order_status_history cascade at the
+  // database level.
   await tx.delete(companyApiLogs).where(eq(companyApiLogs.orderId, orderId));
   await tx.delete(webhookEvents).where(eq(webhookEvents.orderId, orderId));
+  await tx.delete(capiEventLog).where(eq(capiEventLog.orderId, orderId));
+  await tx.delete(tiktokEventLog).where(eq(tiktokEventLog.orderId, orderId));
   await tx.delete(companyShipments).where(eq(companyShipments.orderId, orderId));
   await tx.delete(orderProducts).where(eq(orderProducts.orderId, orderId));
   await tx.delete(orders).where(eq(orders.id, orderId));
@@ -1097,4 +1102,360 @@ export async function incrementDeliveryAttempts(
       updatedAt: new Date().toISOString(),
     })
     .where(eq(orders.id, orderId));
+}
+
+// ─── Order Edit (dashboard) ─────────────────────────────────────────────────
+
+export const EDITABLE_ORDER_STATUSES = [
+  "new",
+  "confirmed",
+  "unreachable",
+  "no_answer_1",
+  "no_answer_2",
+  "no_answer_3",
+  "preparing",
+  "ready",
+  "assigned",
+] as const;
+
+export const LOCKED_ORDER_STATUSES = [
+  "dispatched",
+  "out_for_delivery",
+  "delivered",
+  "returned",
+  "cancelled",
+] as const;
+
+export interface UpdateOrderLineInput {
+  productId: string;
+  productName: string;
+  variantId?: string | null;
+  variantLabel?: string | null;
+  quantity: number;
+  pricePerUnit: number;
+}
+
+export interface UpdateOrderDetailsInput {
+  customerName?: string;
+  phone?: string;
+  wilayaId?: number;
+  communeId?: string;
+  city?: string | null;
+  address?: string | null;
+  deliveryType?: "home" | "stop_desk";
+  deliveryFee?: number;
+  notes?: string | null;
+  price?: number;
+  products?: UpdateOrderLineInput[];
+}
+
+function orderLineKey(productId: string, variantId: string | null | undefined): string {
+  return `${productId}|${variantId ?? ""}`;
+}
+
+export async function updateOrderDetails(
+  db: PgDb,
+  orderId: string,
+  input: UpdateOrderDetailsInput,
+  actor?: { id: string; name: string } | null,
+) {
+  const now = new Date().toISOString();
+  const orderRow = await db
+    .select()
+    .from(orders)
+    .where(eq(orders.id, orderId))
+    .then((rows) => rows[0] ?? null);
+  if (!orderRow) {
+    const err = new Error("Order not found") as Error & { code?: string };
+    err.code = "NOT_FOUND";
+    throw err;
+  }
+  if (orderRow.trackingNumber) {
+    const err = new Error("Order already dispatched — edit the shipment instead") as Error & {
+      code?: string;
+      context?: Record<string, unknown>;
+    };
+    err.code = "ORDER_ALREADY_DISPATCHED";
+    err.context = { orderId };
+    throw err;
+  }
+  if ((LOCKED_ORDER_STATUSES as readonly string[]).includes(orderRow.status)) {
+    const err = new Error(
+      `Cannot edit an order in "${orderRow.status}" status`,
+    ) as Error & { code?: string; context?: Record<string, unknown> };
+    err.code = "INVALID_STATUS_TRANSITION";
+    err.context = { orderId, currentStatus: orderRow.status };
+    throw err;
+  }
+
+  const existingLines = await db
+    .select()
+    .from(orderProducts)
+    .where(eq(orderProducts.orderId, orderId));
+
+  let nextLines: Array<{
+    id: string;
+    orderId: string;
+    productId: string;
+    productName: string;
+    variantId: string | null;
+    variantLabel: string | null;
+    quantity: number;
+    pricePerUnit: number;
+    lineTotal: number;
+    createdAt: string;
+  }> | null = null;
+  let nextPrice = orderRow.price as number;
+
+  if (input.products) {
+    const lockedLine = existingLines.find(
+      (line) => (line.returnedQuantity ?? 0) > 0 || line.status !== "fulfilled",
+    );
+    if (lockedLine) {
+      const err = new Error(
+        "Products cannot be edited after a return was recorded on this order",
+      ) as Error & { code?: string };
+      err.code = "ORDER_LINES_LOCKED";
+      throw err;
+    }
+    // Validate products / variants exist before touching stock.
+    for (const line of input.products) {
+      const productRow = await db
+        .select({ id: products.id, trackInventory: products.trackInventory })
+        .from(products)
+        .where(eq(products.id, line.productId))
+        .then((rows) => rows[0] ?? null);
+      if (!productRow) {
+        const err = new Error(`Product not found: ${line.productId}`) as Error & {
+          code?: string;
+        };
+        err.code = "PRODUCT_NOT_FOUND";
+        throw err;
+      }
+      if (line.variantId) {
+        const variantRow = await db
+          .select({ id: productVariants.id })
+          .from(productVariants)
+          .where(eq(productVariants.id, line.variantId))
+          .then((rows) => rows[0] ?? null);
+        if (!variantRow) {
+          const err = new Error(`Variant not found: ${line.variantId}`) as Error & {
+            code?: string;
+          };
+          err.code = "VARIANT_NOT_FOUND";
+          throw err;
+        }
+      }
+    }
+    nextLines = input.products.map((line) => ({
+      id: crypto.randomUUID(),
+      orderId,
+      productId: line.productId,
+      productName: line.productName,
+      variantId: line.variantId ?? null,
+      variantLabel: line.variantLabel ?? null,
+      quantity: line.quantity,
+      pricePerUnit: line.pricePerUnit,
+      lineTotal: line.pricePerUnit * line.quantity,
+      createdAt: now,
+    }));
+    const linesTotal = nextLines.reduce((sum, line) => sum + line.lineTotal, 0);
+    nextPrice = input.price ?? linesTotal;
+  } else if (input.price !== undefined) {
+    nextPrice = input.price;
+  }
+
+  if (input.wilayaId !== undefined) {
+    const wilayaRow = await db
+      .select({ id: wilayas.id })
+      .from(wilayas)
+      .where(eq(wilayas.id, input.wilayaId))
+      .then((rows) => rows[0] ?? null);
+    if (!wilayaRow) {
+      const err = new Error("Wilaya not found") as Error & { code?: string };
+      err.code = "WILAYA_NOT_FOUND";
+      throw err;
+    }
+  }
+  if (input.communeId !== undefined) {
+    const communeRow = await db
+      .select({ id: communes.id })
+      .from(communes)
+      .where(eq(communes.id, input.communeId))
+      .then((rows) => rows[0] ?? null);
+    if (!communeRow) {
+      const err = new Error("Commune not found") as Error & { code?: string };
+      err.code = "COMMUNE_NOT_FOUND";
+      throw err;
+    }
+  }
+
+  const effectiveDeliveryType = input.deliveryType ?? (orderRow.deliveryType as "home" | "stop_desk");
+  const effectiveAddress = input.address !== undefined ? input.address : (orderRow.address as string | null);
+  if (effectiveDeliveryType === "home" && !effectiveAddress?.trim()) {
+    const err = new Error("Address is required for home delivery") as Error & { code?: string };
+    err.code = "ADDRESS_REQUIRED";
+    throw err;
+  }
+
+  const nextDeliveryFee = input.deliveryFee ?? (orderRow.deliveryFee as number);
+  const nextCodAmount = nextPrice + nextDeliveryFee;
+  const priceDelta = nextPrice - (orderRow.price as number);
+
+  const patch: Partial<typeof orders.$inferInsert> = {
+    updatedAt: now,
+    price: nextPrice,
+    deliveryFee: nextDeliveryFee,
+    codAmount: nextCodAmount,
+  };
+  if (input.customerName !== undefined) patch.customerName = input.customerName.trim();
+  if (input.phone !== undefined) patch.phone = input.phone.trim();
+  if (input.wilayaId !== undefined) patch.wilayaId = input.wilayaId;
+  if (input.communeId !== undefined) patch.communeId = input.communeId;
+  if (input.city !== undefined) patch.city = input.city || null;
+  if (input.address !== undefined) patch.address = input.address || null;
+  if (input.deliveryType !== undefined) patch.deliveryType = input.deliveryType;
+  if (input.notes !== undefined) patch.notes = input.notes?.trim() ? input.notes.trim() : null;
+
+  await db.transaction(async (tx) => {
+    if (nextLines) {
+      const oldQty = new Map<string, number>();
+      for (const line of existingLines) {
+        const key = orderLineKey(line.productId, line.variantId);
+        oldQty.set(key, (oldQty.get(key) ?? 0) + (line.quantity as number));
+      }
+      const newQty = new Map<string, { qty: number; productId: string; variantId: string | null }>();
+      for (const line of nextLines!) {
+        const key = orderLineKey(line.productId, line.variantId);
+        const prev = newQty.get(key);
+        newQty.set(key, {
+          qty: (prev?.qty ?? 0) + line.quantity,
+          productId: line.productId,
+          variantId: line.variantId,
+        });
+      }
+      const keys = new Set([...oldQty.keys(), ...newQty.keys()]);
+      for (const key of keys) {
+        const before = oldQty.get(key) ?? 0;
+        const after = newQty.get(key);
+        const delta = (after?.qty ?? 0) - before;
+        if (delta === 0) continue;
+        const productId = after?.productId ?? existingLines.find((l) => orderLineKey(l.productId, l.variantId) === key)!.productId;
+        const variantId = after?.variantId ?? existingLines.find((l) => orderLineKey(l.productId, l.variantId) === key)!.variantId ?? null;
+        const productRow = await tx
+          .select({ trackInventory: products.trackInventory })
+          .from(products)
+          .where(eq(products.id, productId))
+          .then((rows) => rows[0] ?? null);
+        if (!productRow?.trackInventory) continue;
+        if (delta > 0) {
+          if (variantId) {
+            await tx.insert(stockMovements).values({
+              id: crypto.randomUUID(),
+              productId,
+              variantId,
+              type: "ORDER_DEDUCTED",
+              delta: -delta,
+              qtyBefore: sql`(SELECT inventory FROM product_variants WHERE id = ${variantId} AND inventory >= ${delta})`,
+              qtyAfter: sql`(SELECT inventory - ${delta} FROM product_variants WHERE id = ${variantId} AND inventory >= ${delta})`,
+              reason: "Order edited - extra quantity deducted",
+              reference: orderId,
+              createdBy: actor?.id ?? "system",
+              createdByName: actor?.name ?? "System",
+              createdAt: now,
+            });
+            await tx
+              .update(productVariants)
+              .set({ inventory: sql`${productVariants.inventory} - ${delta}`, updatedAt: now })
+              .where(and(eq(productVariants.id, variantId), sql`${productVariants.inventory} >= ${delta}`));
+          } else {
+            await tx.insert(stockMovements).values({
+              id: crypto.randomUUID(),
+              productId,
+              variantId: null,
+              type: "ORDER_DEDUCTED",
+              delta: -delta,
+              qtyBefore: sql`(SELECT inventory FROM products WHERE id = ${productId} AND inventory >= ${delta})`,
+              qtyAfter: sql`(SELECT inventory - ${delta} FROM products WHERE id = ${productId} AND inventory >= ${delta})`,
+              reason: "Order edited - extra quantity deducted",
+              reference: orderId,
+              createdBy: actor?.id ?? "system",
+              createdByName: actor?.name ?? "System",
+              createdAt: now,
+            });
+            await tx
+              .update(products)
+              .set({ inventory: sql`${products.inventory} - ${delta}`, updatedAt: now })
+              .where(and(eq(products.id, productId), sql`${products.inventory} >= ${delta}`));
+          }
+        } else {
+          const restore = -delta;
+          if (variantId) {
+            const variantRow = await tx
+              .select({ inventory: productVariants.inventory })
+              .from(productVariants)
+              .where(eq(productVariants.id, variantId))
+              .then((rows) => rows[0] ?? null);
+            const qtyBefore = variantRow?.inventory ?? 0;
+            await tx
+              .update(productVariants)
+              .set({ inventory: qtyBefore + restore, updatedAt: now })
+              .where(eq(productVariants.id, variantId));
+            await tx.insert(stockMovements).values({
+              id: crypto.randomUUID(),
+              productId,
+              variantId,
+              type: "ORDER_CANCELLED",
+              delta: restore,
+              qtyBefore,
+              qtyAfter: qtyBefore + restore,
+              reason: "Order edited - quantity restored",
+              reference: orderId,
+              createdBy: actor?.id ?? "system",
+              createdByName: actor?.name ?? "System",
+              createdAt: now,
+            });
+          } else {
+            const productInventoryRow = await tx
+              .select({ inventory: products.inventory })
+              .from(products)
+              .where(eq(products.id, productId))
+              .then((rows) => rows[0] ?? null);
+            const qtyBefore = productInventoryRow?.inventory ?? 0;
+            await tx
+              .update(products)
+              .set({ inventory: qtyBefore + restore, updatedAt: now })
+              .where(eq(products.id, productId));
+            await tx.insert(stockMovements).values({
+              id: crypto.randomUUID(),
+              productId,
+              variantId: null,
+              type: "ORDER_CANCELLED",
+              delta: restore,
+              qtyBefore,
+              qtyAfter: qtyBefore + restore,
+              reason: "Order edited - quantity restored",
+              reference: orderId,
+              createdBy: actor?.id ?? "system",
+              createdByName: actor?.name ?? "System",
+              createdAt: now,
+            });
+          }
+        }
+      }
+      await tx.delete(orderProducts).where(eq(orderProducts.orderId, orderId));
+      await tx.insert(orderProducts).values(nextLines);
+    }
+
+    await tx.update(orders).set(patch).where(eq(orders.id, orderId));
+
+    if (priceDelta !== 0) {
+      await tx
+        .update(customers)
+        .set({ totalSpent: sql`${customers.totalSpent} + ${priceDelta}` })
+        .where(eq(customers.id, orderRow.customerId));
+    }
+  });
+
+  return { price: nextPrice, deliveryFee: nextDeliveryFee, codAmount: nextCodAmount };
 }

@@ -356,6 +356,67 @@ export async function updateInternalNote(c: Context<AppContext>) {
 }
 
 /**
+ * PATCH /orders/:id
+ * Edit an editable order (address, customer info, delivery prefs, product
+ * lines incl. variant / price). Blocked once dispatched or in a locked
+ * status; inventory diffs reconcile atomically with the line replacement.
+ */
+export async function updateOrder(c: Context<AppContext>) {
+  const db = getDb(c.env.DB);
+  const orderId = c.req.param("id");
+
+  if (!orderId) {
+    throw new ValidationError("Order ID is required", ERROR_CODES.REQUIRED_FIELD_MISSING);
+  }
+
+  const existing = await queries.getOrderById(db, orderId);
+  if (!existing) {
+    throw new NotFoundError("Order", orderId);
+  }
+
+  const bodyData: any = (c.req as any).valid?.("json");
+  const validated: validation.UpdateOrderInput =
+    bodyData ?? validation.updateOrderSchema.parse(await c.req.json());
+
+  if (Object.keys(validated).length === 0) {
+    throw new ValidationError("Provide at least one field to update", ERROR_CODES.VALIDATION_FAILED);
+  }
+
+  const user = c.get("user");
+  try {
+    const result = await queries.updateOrderDetails(
+      db,
+      orderId,
+      validated,
+      user ? { id: user.id, name: user.name ?? "Unknown" } : null,
+    );
+    await logActivity(db, user, ACTIONS.ORDER_UPDATED, {
+      type: "order", id: orderId, label: existing.orderNumber,
+    }, validated);
+    return c.json({ success: true, data: result, message: "Order updated" }, 200);
+  } catch (err) {
+    const code = (err as Error & { code?: string }).code;
+    const context = (err as Error & { context?: Record<string, unknown> }).context;
+    if (code === "ORDER_ALREADY_DISPATCHED" || code === "INVALID_STATUS_TRANSITION" || code === "ORDER_LINES_LOCKED") {
+      throw new BusinessLogicError(
+        err instanceof Error ? err.message : "Order cannot be edited",
+        code === "ORDER_ALREADY_DISPATCHED"
+          ? ERROR_CODES.ORDER_ALREADY_DISPATCHED
+          : ERROR_CODES.INVALID_STATUS_TRANSITION,
+        { orderId, ...(context ?? {}) },
+      );
+    }
+    if (code === "NOT_FOUND" || code === "PRODUCT_NOT_FOUND" || code === "VARIANT_NOT_FOUND" || code === "WILAYA_NOT_FOUND" || code === "COMMUNE_NOT_FOUND") {
+      throw new NotFoundError("Record", code === "NOT_FOUND" ? orderId : code);
+    }
+    if (code === "ADDRESS_REQUIRED") {
+      throw new ValidationError(err instanceof Error ? err.message : "Address is required", ERROR_CODES.REQUIRED_FIELD_MISSING, { orderId });
+    }
+    throw err;
+  }
+}
+
+/**
  * DELETE /orders/:id
  * Permanently delete the order: restore tracked inventory, adjust customer
  * counters, then remove the order with its lines, shipments, and cascaded

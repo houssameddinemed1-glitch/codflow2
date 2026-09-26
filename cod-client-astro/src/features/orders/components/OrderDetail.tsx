@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, X } from "lucide-react";
+import { AlertCircle, Pencil, X } from "lucide-react";
 import {
   canScope,
   useIdentity,
@@ -32,6 +32,7 @@ import {
   canAssignOrder,
   canDeleteOrderFromDetail,
   canDispatchOrder,
+  canEditOrder,
   detailStatusActions,
   dispatchFieldSupport,
   orderStatusFlow,
@@ -48,6 +49,7 @@ import { OrderCustomerCard } from "@/features/orders/components/OrderCustomerCar
 import { OrderProductsCard } from "@/features/orders/components/OrderProductsCard";
 import { OrderDeliveryCard } from "@/features/orders/components/OrderDeliveryCard";
 import { OrderInternalNoteCard } from "@/features/orders/components/OrderInternalNote";
+import { OrderEditDialog } from "@/features/orders/components/OrderEditDialog";
 import { OrderStatusTimelineCard } from "@/features/orders/components/OrderStatusTimelineCard";
 import { OrderShipmentActionsCard } from "@/features/orders/components/OrderShipmentActionsCard";
 import { OrderMobileActionBar } from "@/features/orders/components/OrderMobileActionBar";
@@ -66,6 +68,7 @@ export function OrderDetail({ orderId }: { orderId: string }) {
   const [status, setStatus] = useState<OrderStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
 
   async function load() {
     setError(null);
@@ -300,6 +303,20 @@ export function OrderDetail({ orderId }: { orderId: string }) {
               status={effectiveStatus ?? order.status}
               webhook={order.statusHistory[0]?.by?.startsWith("webhook:")}
             />
+            {canScope(identity, "orders:update") &&
+              canEditOrder(order) && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="size-9 min-h-9 px-0"
+                  onClick={() => setEditing(true)}
+                  disabled={busy}
+                  aria-label={t("actions.edit")}
+                  title={t("actions.edit")}
+                >
+                  <Pencil size={16} />
+                </Button>
+              )}
             {canScope(identity, "orders:delete") &&
               canDeleteOrderFromDetail(effectiveStatus ?? order.status) && (
                 <Button
@@ -414,6 +431,14 @@ export function OrderDetail({ orderId }: { orderId: string }) {
         onChangeOrderStatus={changeOrderStatus}
         onDownloadLabel={downloadOrderLabel}
       />
+      {editing && (
+        <OrderEditDialog
+          order={order}
+          onClose={() => setEditing(false)}
+          onChanged={() => load()}
+          onError={setError}
+        />
+      )}
     </div>
   );
 }

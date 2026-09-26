@@ -288,7 +288,8 @@
     "error_commune": "Veuillez sélectionner une commune",
     "error_address": "L'adresse est obligatoire pour la livraison à domicile",
     "error_delivery_unavailable": "Cette méthode de livraison n'est pas disponible pour la wilaya sélectionnée",
-    "new_order_subtitle": "Remplissez les informations du client et ajoutez des produits pour créer une nouvelle commande"
+    "new_order_subtitle": "Remplissez les informations du client et ajoutez des produits pour créer une nouvelle commande",
+    "error_fee": "Les frais de livraison doivent être de 0 ou plus"
   },
   "nav_group": "Ventes",
   "abandoned": {
