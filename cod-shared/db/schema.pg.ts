@@ -389,6 +389,14 @@ export const orders = pgTable("orders", {
   fbc: text("fbc"),
   /** _fbp cookie captured at placement — browser identity for EMQ. */
   fbp: text("fbp"),
+  /** TikTok click ID (ttclid URL param) — TikTok attribution. */
+  ttclid: text("ttclid"),
+  /** _ttp cookie — TikTok browser identity. */
+  ttp: text("ttp"),
+  /** UTM source (facebook, tiktok, google, etc.) — generic attribution. */
+  utmSource: text("utm_source"),
+  utmMedium: text("utm_medium"),
+  utmCampaign: text("utm_campaign"),
   /** CF-Connecting-IP at placement — sent as client_ip_address in CAPI event. */
   ipAddress: text("ip_address"),
   /** User-Agent at placement — sent as client_user_agent in CAPI event. */

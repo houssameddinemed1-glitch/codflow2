@@ -85,6 +85,14 @@ export interface OrderBase {
   isFragile: boolean | null;
   codPaymentId?: string | null;
   feePaymentId?: string | null;
+  fbc?: string | null;
+  fbp?: string | null;
+  ttclid?: string | null;
+  ttp?: string | null;
+  utmSource?: string | null;
+  utmMedium?: string | null;
+  utmCampaign?: string | null;
+  landingPageId?: string | null;
   createdAt: string;
   updatedAt: string;
 }

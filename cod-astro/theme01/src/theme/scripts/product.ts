@@ -292,7 +292,7 @@ export function initProductPage() {
     const itemTotal = currentPrice * qty;
 
     // 1. Update main price displays
-    document.querySelectorAll<HTMLElement>("#price-display-desktop, #price-display-mobile, #sticky-price").forEach((el) => {
+    document.querySelectorAll<HTMLElement>("#price-display-desktop, #price-display-mobile, #sticky-price, #form-price").forEach((el) => {
       el.innerHTML = `${fmt(currentPrice)} <span style="font-size:.6em;font-weight:700"> ${cur}</span>`;
     });
 
@@ -743,15 +743,28 @@ export function initProductPage() {
     }
   }
 
-  // 3. Populate fbc/fbp hidden inputs right before form submits so the values
-  //    travel with the order payload to cod-server for CAPI attribution.
+  // 3. Populate attribution hidden inputs right before form submits so the values
+  //    travel with the order payload to cod-server for CAPI/TikTok attribution.
   const orderForm = document.querySelector<HTMLFormElement>("form[method=POST]");
   const fbcInput = document.getElementById("fbc-input") as HTMLInputElement | null;
   const fbpInput = document.getElementById("fbp-input") as HTMLInputElement | null;
-  if (orderForm && (fbcInput || fbpInput)) {
+  const ttclidInput = document.getElementById("ttclid-input") as HTMLInputElement | null;
+  const ttpInput = document.getElementById("ttp-input") as HTMLInputElement | null;
+  const utmSourceInput = document.getElementById("utm-source-input") as HTMLInputElement | null;
+  const utmMediumInput = document.getElementById("utm-medium-input") as HTMLInputElement | null;
+  const utmCampaignInput = document.getElementById("utm-campaign-input") as HTMLInputElement | null;
+  function getParam(name: string): string | null {
+    try { return new URLSearchParams(window.location.search).get(name); } catch { return null; }
+  }
+  if (orderForm) {
     orderForm.addEventListener("submit", () => {
       if (fbcInput) fbcInput.value = getCookie("_fbc") ?? "";
       if (fbpInput) fbpInput.value = getCookie("_fbp") ?? "";
+      if (ttclidInput) ttclidInput.value = getParam("ttclid") ?? getCookie("ttclid") ?? "";
+      if (ttpInput) ttpInput.value = getCookie("_ttp") ?? "";
+      if (utmSourceInput) utmSourceInput.value = getParam("utm_source") ?? "";
+      if (utmMediumInput) utmMediumInput.value = getParam("utm_medium") ?? "";
+      if (utmCampaignInput) utmCampaignInput.value = getParam("utm_campaign") ?? "";
     });
   }
 }

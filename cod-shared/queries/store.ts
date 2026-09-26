@@ -63,6 +63,11 @@ export interface StoreOrderData {
   landingPageId?: string | null;
   fbc?: string;
   fbp?: string;
+  ttclid?: string;
+  ttp?: string;
+  utmSource?: string;
+  utmMedium?: string;
+  utmCampaign?: string;
   ipAddress?: string;
   userAgent?: string;
 }
@@ -994,6 +999,11 @@ export async function createStoreOrder(
       codAmount: price + finalDeliveryFee,
       fbc: data.fbc ?? null,
       fbp: data.fbp ?? null,
+      ttclid: (data as { ttclid?: string }).ttclid ?? null,
+      ttp: (data as { ttp?: string }).ttp ?? null,
+      utmSource: (data as { utmSource?: string }).utmSource ?? null,
+      utmMedium: (data as { utmMedium?: string }).utmMedium ?? null,
+      utmCampaign: (data as { utmCampaign?: string }).utmCampaign ?? null,
       ipAddress: data.ipAddress ?? null,
       userAgent: data.userAgent ?? null,
       landingPageId: data.landingPageId ?? null,

@@ -14,6 +14,7 @@ import { OrderStatus } from "@/features/orders/components/OrderStatus";
 import { OrderDelivery } from "@/features/orders/components/OrderDelivery";
 import { OrderNoteCell } from "@/features/orders/components/OrderInternalNote";
 import { OrderRowActions } from "@/features/orders/components/OrderFulfillmentActions";
+import { OrderSourceIcon, getOrderSource } from "@/features/orders/components/OrderSourceIcon";
 
 interface RowProps {
   order: OrderListItem;
@@ -52,6 +53,7 @@ export function OrderDesktopRow({ order, drivers, companies, onChanged, onError,
             <PackageOpen size={14} />
           </span>
           {order.orderNumber}
+          <OrderSourceIcon source={getOrderSource(order)} size={14} />
           {(order.hasReview ?? 0) > 0 && (
             <Star size={12} className="fill-warning text-warning" />
           )}
@@ -123,9 +125,10 @@ export function OrderMobileCard({ order, drivers, companies, onChanged, onError,
           <div className="flex items-center gap-1.5">
             <a
               href={`/orders/${order.id}`}
-              className="text-sm font-semibold text-link hover:underline"
+              className="inline-flex items-center gap-1 text-sm font-semibold text-link hover:underline"
             >
               {order.orderNumber}
+              <OrderSourceIcon source={getOrderSource(order)} size={12} />
             </a>
             {(order.hasReview ?? 0) > 0 && (
               <Star size={12} className="fill-warning text-warning" />

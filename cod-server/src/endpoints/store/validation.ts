@@ -40,6 +40,12 @@ export const storeOrderSchema = z.object({
   // Meta Pixel tracking cookies captured by the storefront at placement time.
   fbc: z.string().optional(),
   fbp: z.string().optional(),
+  // TikTok tracking
+  ttclid: z.string().optional(),
+  ttp: z.string().optional(),
+  utmSource: z.string().optional(),
+  utmMedium: z.string().optional(),
+  utmCampaign: z.string().optional(),
   // WhatsApp OTP verification proof (HMAC token from /store/otp/verify, or a
   // bypass token when dzverify could not serve the send). Required only when
   // the store's OTP verification is enabled.

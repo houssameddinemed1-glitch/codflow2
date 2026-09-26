@@ -33,6 +33,10 @@ interface Props {
 const { product, content, fieldErrors, serverError, basePrice, defaultVariant, cur, isRTL, offers, defaultVariantId, isOutOfStock = false, otpEnabled = false, turnstileEnabled = false, turnstileSiteKey = null, landingPageSlug = null } = Astro.props;
 
 const comparePrice = defaultVariant?.compareAtPrice ?? product.compareAtPrice ?? null;
+
+function fmt(n: number) {
+  return n.toLocaleString("ar-DZ");
+}
 ---
 
 <!-- Order form card -->
@@ -68,6 +72,12 @@ const comparePrice = defaultVariant?.compareAtPrice ?? product.compareAtPrice ??
     <!-- Meta Pixel tracking (populated by JS at submit time) -->
     <input type="hidden" name="fbc" id="fbc-input" value="" />
     <input type="hidden" name="fbp" id="fbp-input" value="" />
+    <!-- TikTok + UTM attribution (populated by JS at submit time) -->
+    <input type="hidden" name="ttclid" id="ttclid-input" value="" />
+    <input type="hidden" name="ttp" id="ttp-input" value="" />
+    <input type="hidden" name="utmSource" id="utm-source-input" value="" />
+    <input type="hidden" name="utmMedium" id="utm-medium-input" value="" />
+    <input type="hidden" name="utmCampaign" id="utm-campaign-input" value="" />
     <input type="hidden" name="productName"        value={product.name} />
     <input type="hidden" name="pricePerUnit"       value={basePrice} id="price-input" />
     <input type="hidden" name="variantId"          value={defaultVariant?.id ?? ""} id="variant-id-input" />
@@ -78,6 +88,17 @@ const comparePrice = defaultVariant?.compareAtPrice ?? product.compareAtPrice ??
     <input type="hidden" name="otpToken" id="otp-token-input" value="" />
     {/* Landing page attribution — present only on landing pages */}
     {landingPageSlug && <input type="hidden" name="landingPageSlug" value={landingPageSlug} />}
+
+    {/* Product title + price above the variant selector */}
+    <div class="flex items-center justify-between gap-3 rounded-2xl border px-4 py-3" style="border-color: var(--clr-border); background: color-mix(in srgb, var(--clr-primary) 5%, white)">
+      <span class="min-w-0 font-black text-[0.9375rem] leading-snug" style="color: var(--clr-text)">{product.name}</span>
+      <span class="shrink-0 text-end">
+        <span id="form-price" class="font-black text-[1.125rem] whitespace-nowrap" style="color: var(--clr-primary)">{fmt(basePrice)} <span style="font-size:.6em;font-weight:700"> {cur}</span></span>
+        {comparePrice != null && comparePrice > basePrice && (
+          <span class="block text-[0.75rem] font-bold line-through whitespace-nowrap" style="color: var(--clr-text-2)">{fmt(comparePrice)} {cur}</span>
+        )}
+      </span>
+    </div>
 
     {/* Standalone variant selector only when no offers — otherwise it lives inside the tier cards */}
     {offers.length === 0 && <VariantSelector product={product} />}

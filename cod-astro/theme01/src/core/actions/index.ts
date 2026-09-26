@@ -59,6 +59,26 @@ export const server = {
         (v) => (v === "" || v == null ? undefined : v),
         z.string().optional()
       ),
+      ttclid: z.preprocess(
+        (v) => (v === "" || v == null ? undefined : v),
+        z.string().optional()
+      ),
+      ttp: z.preprocess(
+        (v) => (v === "" || v == null ? undefined : v),
+        z.string().optional()
+      ),
+      utmSource: z.preprocess(
+        (v) => (v === "" || v == null ? undefined : v),
+        z.string().optional()
+      ),
+      utmMedium: z.preprocess(
+        (v) => (v === "" || v == null ? undefined : v),
+        z.string().optional()
+      ),
+      utmCampaign: z.preprocess(
+        (v) => (v === "" || v == null ? undefined : v),
+        z.string().optional()
+      ),
       // WhatsApp OTP verification proof — set after the OTP step verifies.
       // Absent when the store has verification disabled (schema stays additive).
       otpToken: z.preprocess(
@@ -110,6 +130,11 @@ export const server = {
         variantSelections: input.variantSelections,
         fbc: input.fbc,
         fbp: input.fbp,
+        ttclid: input.ttclid,
+        ttp: input.ttp,
+        utmSource: input.utmSource,
+        utmMedium: input.utmMedium,
+        utmCampaign: input.utmCampaign,
         otpToken: input.otpToken,
         turnstileToken: input.turnstileToken,
         landingPageSlug: input.landingPageSlug,

@@ -53,6 +53,7 @@ import { OrderEditDialog } from "@/features/orders/components/OrderEditDialog";
 import { OrderStatusTimelineCard } from "@/features/orders/components/OrderStatusTimelineCard";
 import { OrderShipmentActionsCard } from "@/features/orders/components/OrderShipmentActionsCard";
 import { OrderMobileActionBar } from "@/features/orders/components/OrderMobileActionBar";
+import { OrderSourceBadge } from "@/features/orders/components/OrderSourceIcon";
 
 export function OrderDetail({ orderId }: { orderId: string }) {
   const t = useT("orders");
@@ -291,7 +292,12 @@ export function OrderDetail({ orderId }: { orderId: string }) {
   return (
     <div className="space-y-5 pb-20 lg:pb-0">
       <PageHeader
-        title={order.orderNumber}
+        title={
+          <span className="inline-flex items-center gap-2">
+            {order.orderNumber}
+            <OrderSourceBadge order={order} />
+          </span>
+        }
         subtitle={
           order.orderType === "online" ? t("type.online") : t("type.offline")
         }
