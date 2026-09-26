@@ -82,6 +82,13 @@ export function dispatchOrder(id: string, body: Record<string, unknown>) {
   return apiFetch<DataEnvelope<{ trackingNumber: string; labelUrl?: string | null }>>(`/api/orders/${encodeURIComponent(id)}/dispatch`, json({ method: "POST", body: JSON.stringify(body) }));
 }
 
+export function bulkDispatchOrders(companyId: string, orderIds: string[]) {
+  return apiFetch<{ success: boolean; message: string; data: { results: Array<{ orderId: string; orderNumber?: string; trackingNumber?: string; error?: string }> } }>(
+    "/api/orders/bulk-dispatch",
+    json({ method: "POST", body: JSON.stringify({ companyId, orderIds }) }),
+  );
+}
+
 export function validateShipment(id: string) {
   return apiFetch<DataEnvelope<null>>(`/api/orders/${encodeURIComponent(id)}/validate-shipment`, { method: "POST" });
 }

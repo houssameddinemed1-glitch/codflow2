@@ -53,7 +53,7 @@ export function DispatchCompanyDialog({
     order.deliveryType === "stop_desk" ? "stop_desk" : "home",
   );
   const [remarks, setRemarks] = useState("");
-  const [weight, setWeight] = useState("");
+  const [weight, setWeight] = useState("1");
   const [fragile, setFragile] = useState(false);
   const [busy, setBusy] = useState(false);
   const selectedCompany = companies.find((company) => company.id === companyId);

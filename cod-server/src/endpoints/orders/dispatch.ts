@@ -97,17 +97,7 @@ export async function dispatchToCompany(c: Context<AppContext>) {
     );
   }
 
-  const effectiveDeliveryTypeForAddressCheck =
-    (body as Record<string, unknown>).deliveryType === "home" || (body as Record<string, unknown>).deliveryType === "stop_desk"
-      ? (body as Record<string, unknown>).deliveryType as "home" | "stop_desk"
-      : order.deliveryType;
-  if (effectiveDeliveryTypeForAddressCheck === "home" && !order.address?.trim()) {
-    throw new ValidationError(
-      "Address is required for home delivery — edit the order to add the street address",
-      ERROR_CODES.REQUIRED_FIELD_MISSING,
-      { orderId, field: "address" }
-    );
-  }
+
 
   // Resolve French names from reference tables — used by both NOEST (commune text) and ZR Express (territory search keyword).
   const [wilayaRow, communeRow] = await Promise.all([
@@ -159,7 +149,7 @@ export async function dispatchToCompany(c: Context<AppContext>) {
       ? body.stationCode?.trim() || order.stationCode || undefined
       : undefined;
   const remarks = body.remarks;
-  const weight   = body.weight   != null ? Number(body.weight)   : (order.weight   ?? undefined);
+  const weight   = body.weight   != null ? Number(body.weight)   : (order.weight   ?? 1);
   // body.fragile arrives as a JS boolean from c.req.json(); the surrounding
   // `as Record<string, string>` cast is a lie — read through unknown to compare safely.
   const fragileRaw = (body as Record<string, unknown>).fragile;
@@ -207,11 +197,12 @@ export async function dispatchToCompany(c: Context<AppContext>) {
       ? `${uniqueProductNames.join(", ")} — ${order.orderNumber}`
       : order.orderNumber;
 
+    const fallbackAddress = order.address?.trim() ? order.address : communeName;
     const result = await provider.createShipment({
       orderId: order.id,
       customerName: order.customerName,
       phone: order.phone,
-      address: order.address ?? "",
+      address: fallbackAddress,
       wilayaId: order.wilayaId,
       wilaya: wilayaName,
       commune: communeName,
@@ -221,7 +212,7 @@ export async function dispatchToCompany(c: Context<AppContext>) {
       stationCode,
       reference: order.orderNumber,
       remarks: remarks ?? order.notes ?? undefined,
-      weight,
+      weight: weight ?? 1,
       fragile: isFragile,
     });
 
@@ -540,12 +531,13 @@ export async function bulkDispatch(c: Context<AppContext>) {
         orderId: order.id,
         customerName: order.customerName,
         phone: order.phone,
-        address: order.address ?? "",
+        address: order.address?.trim() ? order.address : communeName,
         wilayaId: order.wilayaId,
         wilaya: wilayaName,
         commune: communeName,
         amount: order.price + (order.deliveryFee ?? 0),
         productDescription: order.orderNumber,
+        weight: order.weight ?? 1,
         stopDesk: order.deliveryType === "stop_desk",
         stationCode: order.stationCode ?? undefined,
         reference: order.orderNumber,

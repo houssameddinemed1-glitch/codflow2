@@ -1,17 +1,19 @@
 import { useDeferredValue, useEffect, useState } from "react";
-import { AlertCircle, Filter, PackageOpen, Trash2, X } from "lucide-react";
+import { AlertCircle, Building2, Filter, PackageOpen, Trash2, X } from "lucide-react";
 import { canScope, useIdentity } from "@/features/auth/components/RequireAuth";
 import { useT } from "@/i18n/react";
 import { ApiError } from "@/lib/api";
 import { notify } from "@/lib/notify";
 import {
   bulkDeleteOrders,
+  bulkDispatchOrders,
   listDeliveryCompanies,
   listDrivers,
   listOrders,
   listProducts,
 } from "@/features/orders/api";
 import {
+  canDispatchOrder,
   FILTER_STATUSES,
   filterOrders,
   paginateOrders,
@@ -27,6 +29,7 @@ import type {
 } from "@/features/orders/types";
 import {
   Button,
+  Dialog,
   EmptyState,
   LinkButton,
   Alert,
@@ -129,6 +132,9 @@ export function OrdersList() {
   const [page, setPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [bulkDispatchOpen, setBulkDispatchOpen] = useState(false);
+  const [bulkDispatchCompany, setBulkDispatchCompany] = useState("");
+  const [bulkDispatching, setBulkDispatching] = useState(false);
   const deferredFilters = useDeferredValue(filters);
   const pageSize = 10;
 
@@ -305,6 +311,43 @@ export function OrdersList() {
     }
   }
 
+  async function onBulkDispatch() {
+    if (selectedIds.size === 0 || bulkDispatching || !bulkDispatchCompany) return;
+    const ids = [...selectedIds];
+    setBulkDispatching(true);
+    try {
+      const res = await bulkDispatchOrders(bulkDispatchCompany, ids);
+      const ok = res.data.results.filter((r) => r.trackingNumber).length;
+      const fail = res.data.results.filter((r) => r.error).length;
+      if (ok > 0) {
+        notify.success(`${ok} dispatched${fail ? `, ${fail} failed` : ""}`);
+        setSelectedIds(new Set());
+        await load(filters.product);
+      }
+      if (fail > 0) {
+        const msg = res.data.results
+          .filter((r) => r.error)
+          .map((r) => `${r.orderNumber ?? r.orderId}: ${r.error}`)
+          .join(" | ");
+        setActionError(msg);
+      }
+      setBulkDispatchOpen(false);
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      setActionError(message);
+      notify.error(message);
+    } finally {
+      setBulkDispatching(false);
+    }
+  }
+
+  const selectedOrders = orders ? orders.filter((o) => selectedIds.has(o.id)) : [];
+  const dispatchableSelected = selectedOrders.filter((o) => canDispatchOrder(o));
+  const canBulkDispatch =
+    canScope(identity, "delivery:dispatch") &&
+    companies.length > 0 &&
+    dispatchableSelected.length > 0;
+
   const rowProps = {
     drivers,
     companies,
@@ -332,7 +375,7 @@ export function OrdersList() {
           </button>
         </Alert>
       )}
-      {selectedCount > 0 && canDelete && (
+      {selectedCount > 0 && (canDelete || canBulkDispatch) && (
         <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card px-3 py-2">
           <span className="text-xs font-semibold text-muted-foreground">
             {t("selected_count").replace("{count}", String(selectedCount))}
@@ -346,17 +389,56 @@ export function OrdersList() {
           >
             {t("clear_selection")}
           </Button>
+          {canBulkDispatch && (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setBulkDispatchOpen(true)}
+            >
+              <Building2 size={14} />
+              Dispatch ({dispatchableSelected.length})
+            </Button>
+          )}
+          {canDelete && (
+            <Button
+              type="button"
+              variant="danger"
+              size="sm"
+              disabled={bulkDeleting}
+              onClick={() => void onBulkDelete()}
+            >
+              <Trash2 size={14} />
+              {t("bulk_delete")} ({selectedCount})
+            </Button>
+          )}
+        </div>
+      )}
+      {bulkDispatchOpen && (
+        <Dialog title="Dispatch selected" onClose={() => setBulkDispatchOpen(false)}>
+          <p className="mb-3 text-sm text-muted-foreground">
+            {dispatchableSelected.length} of {selectedCount} selected can be dispatched. Address will default to commune (البلدية) if empty, weight defaults to 1kg.
+          </p>
+          <Select
+            value={bulkDispatchCompany}
+            onChange={(e) => setBulkDispatchCompany(e.currentTarget.value)}
+          >
+            <option value="">Select delivery company</option>
+            {companies.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </Select>
           <Button
             type="button"
-            variant="danger"
-            size="sm"
-            disabled={bulkDeleting}
-            onClick={() => void onBulkDelete()}
+            className="mt-4 w-full"
+            disabled={!bulkDispatchCompany || bulkDispatching}
+            onClick={() => void onBulkDispatch()}
           >
-            <Trash2 size={14} />
-            {t("bulk_delete")} ({selectedCount})
+            {bulkDispatching ? "Dispatching..." : `Dispatch ${dispatchableSelected.length} orders`}
           </Button>
-        </div>
+        </Dialog>
       )}
       <Card flush>
         <div className="space-y-3 border-b border-border p-3">
