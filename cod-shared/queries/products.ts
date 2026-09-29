@@ -3,6 +3,7 @@ import { products, productCategories, productVariants, productImages, reviews, s
 import type { PgDb } from "../db/client.pg";
 import { safeLikeTerm } from "./search";
 import { sanitizeRichText } from "../lib/sanitize-html";
+import { toPlainText } from "../lib/rich-text";
 
 export interface VariantOption {
   name: string;
@@ -18,9 +19,31 @@ export interface ProductFilters {
   offset?: number;
 }
 
+export type DescriptionFormat = "text" | "html";
+
+function normaliseFormat(value: unknown): DescriptionFormat {
+  return value === "html" ? "html" : "text";
+}
+
+/**
+ * Tag-free rendering handed to clients for <meta name=description> and
+ * JSON-LD. For `text` rows it is the raw column (meta output is unchanged
+ * from today); for `html` rows it strips tags, drops images and decodes
+ * entities.
+ */
+export async function deriveDescriptionPlain(
+  description: string | null,
+  format: DescriptionFormat | null | undefined,
+): Promise<string | null> {
+  if (description === null) return null;
+  if (format === "html") return toPlainText(description);
+  return description;
+}
+
 export interface CreateProductData {
   name: string;
   description?: string | null;
+  descriptionFormat?: DescriptionFormat;
   handle?: string;
   price: number;
   compareAtPrice?: number | null;
@@ -44,6 +67,7 @@ export interface CreateProductData {
 export interface UpdateProductData {
   name?: string;
   description?: string | null;
+  descriptionFormat?: DescriptionFormat;
   handle?: string;
   price?: number;
   compareAtPrice?: number | null;
@@ -213,6 +237,7 @@ export async function createProduct(db: PgDb, data: CreateProductData) {
     id,
     name: data.name,
     description: data.description ? sanitizeRichText(data.description) : null,
+    descriptionFormat: normaliseFormat(data.descriptionFormat),
     handle,
     currency: "DZD",
     price: data.price,
@@ -247,6 +272,9 @@ export async function updateProduct(db: PgDb, productId: string, data: UpdatePro
   if (data.name !== undefined) updates.name = data.name;
   if (data.description !== undefined) {
     updates.description = data.description ? sanitizeRichText(data.description) : null;
+  }
+  if (data.descriptionFormat !== undefined) {
+    updates.descriptionFormat = normaliseFormat(data.descriptionFormat);
   }
   if (data.handle !== undefined) updates.handle = data.handle;
   if (data.price !== undefined) updates.price = data.price;

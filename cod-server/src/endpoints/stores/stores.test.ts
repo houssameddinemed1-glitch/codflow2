@@ -38,6 +38,9 @@ function storeRow(overrides: Record<string, any> = {}) {
     ogImage: "https://cdn.example.com/og.png",
     announcementBar: "Free delivery on orders above 3000 دج",
     reviewsEnabled: true,
+    cartEnabled: false,
+    freeShippingThreshold: null,
+    cartShippingMode: "highest",
     status: "active",
     // storeApiKey sits between status and createdAt in the schema. It was
     // missing here, which silently shifted every value after it by one slot.

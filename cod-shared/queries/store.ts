@@ -48,6 +48,8 @@ import {
   serializeCustomFieldAnswers,
   type CustomFieldAnswer,
 } from "../checkout-form/apply";
+import { getFooterPages, getPublicLegalContact } from "./store-pages";
+import type { PageLocale } from "../legal/kinds";
 
 export interface StoreOrderData {
   customerName: string;
@@ -127,6 +129,12 @@ export async function getStoreConfig(db: PgDb, storeId: string) {
     .from(storeFormConfig)
     .where(eq(storeFormConfig.storeId, storeId))
     .then((rows) => rows[0] ?? null);
+  // The footer renders on every page, so its link list rides along here
+  // rather than costing a second round trip per page view.
+  const [pages, legalContact] = await Promise.all([
+    getFooterPages(db, storeId, store.lang as PageLocale),
+    getPublicLegalContact(db, storeId),
+  ]);
   // The raw policy column never leaves the server. This function spreads the
   // whole store row, so a column is public the moment it exists unless it is
   // removed by name here — the storefront gets the resolved projection instead,
@@ -143,6 +151,8 @@ export async function getStoreConfig(db: PgDb, storeId: string) {
     whatsapp: resolveStorefrontWidget(whatsappWidgetJson),
     pixelId: pixelRow?.enabled ? pixelRow.pixelId : null,
     conversionEvent: pixelRow?.enabled ? (pixelRow.conversionEvent as "Purchase" | "Purchase_Confirmed" | "Purchase_Delivered" | "Lead") : "Purchase",
+    pages,
+    legalContact,
     tiktokPixelId: tiktokRow?.enabled ? tiktokRow.pixelId : null,
     tiktokConversionEvent: tiktokRow?.enabled ? (tiktokRow.conversionEvent as "Purchase" | "Purchase_Confirmed" | "Purchase_Delivered" | "Lead") : "Purchase",
     formVariant: (formRow?.variant as string) ?? "default",

@@ -128,6 +128,12 @@ export const SCOPES = {
   /** Change the WhatsApp number, the widget's content, appearance and placement */
   WHATSAPP_WIDGET_MANAGE: "whatsapp_widget:manage",
 
+  // Store Pages (legal pages: Terms, Privacy, Refund, Shipping, and custom pages)
+  /** View store pages list, content, and the legal profile */
+  STORE_PAGES_READ: "store_pages:read",
+  /** Create, edit, publish, delete store pages; manage the legal profile */
+  STORE_PAGES_MANAGE: "store_pages:manage",
+
   // Abandoned Orders
   /** View abandoned orders list and stats */
   ABANDONED_ORDERS_READ: "abandoned_orders:read",
@@ -244,6 +250,10 @@ export const SCOPE_CATEGORIES = {
   whatsappWidget: {
     label: "WhatsApp Widget",
     scopes: [SCOPES.WHATSAPP_WIDGET_READ, SCOPES.WHATSAPP_WIDGET_MANAGE],
+  },
+  storePages: {
+    label: "Store Pages",
+    scopes: [SCOPES.STORE_PAGES_READ, SCOPES.STORE_PAGES_MANAGE],
   },
   abandonedOrders: {
     label: "Abandoned Orders",

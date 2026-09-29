@@ -252,6 +252,7 @@ export function productRow(overrides: Record<string, unknown> = {}): Record<stri
     id: "prod_1",
     name: "T-Shirt",
     description: null,
+    description_format: "text",
     handle: "t-shirt-prod_1",
     currency: "DZD",
     price: 1500,

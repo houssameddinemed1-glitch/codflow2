@@ -10,6 +10,7 @@ import { eq, desc, and, sql, isNull, count } from "drizzle-orm";
 import {
   landingPages,
   landingPageImages,
+  landingPagePixelConfig,
   lpImageUploadJobs,
   orders,
   products,
@@ -35,6 +36,13 @@ export interface LandingPageListItem {
   views: number;
   orders: number;
   revenue: number;
+  /** The page's own tracking, when it has one. Never carries the token. */
+  tracking: {
+    pixelId: string;
+    conversionEvent: "Lead" | "Purchase" | "Purchase_Confirmed" | "Purchase_Delivered";
+    enabled: boolean;
+    testMode: boolean;
+  } | null;
   publishedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -115,9 +123,20 @@ async function resolveListRow(
       createdAt: landingPages.createdAt,
       updatedAt: landingPages.updatedAt,
       ...STATS_SELECT,
+      // Enough of the tracking override to badge the row — never the token.
+      // A join rather than a request per row: a merchant running twenty pages
+      // wants to see which are on their own pixel in one look.
+      trackingPixelId: landingPagePixelConfig.pixelId,
+      trackingConversionEvent: landingPagePixelConfig.conversionEvent,
+      trackingEnabled: landingPagePixelConfig.enabled,
+      trackingTestMode: landingPagePixelConfig.testMode,
     })
     .from(landingPages)
     .leftJoin(products, eq(landingPages.productId, products.id))
+    .leftJoin(
+      landingPagePixelConfig,
+      eq(landingPagePixelConfig.landingPageId, landingPages.id),
+    )
     .where(conditions.length > 0 ? and(...conditions) : undefined)
     .orderBy(desc(landingPages.createdAt));
 
@@ -128,13 +147,30 @@ async function resolveListRow(
   if (pagination.offset !== undefined) query = query.offset(pagination.offset);
   const rows = await query;
 
-  return rows.map((row) => ({
-    ...row,
-    imageCount: Number(row.imageCount),
-    views: Number(row.views),
-    orders: Number(row.orders),
-    revenue: Number(row.revenue),
-  }));
+  return rows.map((row) => {
+    const {
+      trackingPixelId,
+      trackingConversionEvent,
+      trackingEnabled,
+      trackingTestMode,
+      ...rest
+    } = row;
+    return {
+      ...rest,
+      imageCount: Number(rest.imageCount),
+      views: Number(rest.views),
+      orders: Number(rest.orders),
+      revenue: Number(rest.revenue),
+      tracking: trackingPixelId
+        ? {
+            pixelId: trackingPixelId,
+            conversionEvent: trackingConversionEvent!,
+            enabled: Boolean(trackingEnabled),
+            testMode: Boolean(trackingTestMode),
+          }
+        : null,
+    };
+  });
 }
 
 export async function listLandingPages(

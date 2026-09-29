@@ -94,6 +94,8 @@ function abandonedRow(overrides: Record<string, unknown> = {}): Record<string, u
     variant_id: null,
     variant_label: null,
     price: 2500,
+    items_json: null,
+    item_count: null,
     delivery_type: "home",
     fbc: null,
     fbp: null,

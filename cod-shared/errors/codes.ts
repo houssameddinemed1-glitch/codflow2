@@ -97,6 +97,14 @@ export const ERROR_CODES = {
   OPERATION_NOT_SUPPORTED: "OPERATION_NOT_SUPPORTED",
 
   // ============================================================================
+  // BUSINESS LOGIC ERRORS - STORE PAGES
+  // ============================================================================
+  /** A legal page (terms/privacy/refund/shipping) can be unpublished but never deleted. */
+  STORE_PAGE_CANNOT_DELETE_LEGAL: "STORE_PAGE_CANNOT_DELETE_LEGAL",
+  /** "Reset to template" requested on a custom page, which has no template. */
+  STORE_PAGE_NOT_LEGAL: "STORE_PAGE_NOT_LEGAL",
+
+  // ============================================================================
   // BUSINESS LOGIC ERRORS - STOREFRONT OTP VERIFICATION (dzverify)
   // ============================================================================
   /** Store OTP verification is not enabled for this store. */

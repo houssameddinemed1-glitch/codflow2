@@ -1,9 +1,9 @@
-/**
- * getStoreConfig turnstile projection — unit tests
+﻿/**
+ * getStoreConfig turnstile projection â€” unit tests
  *
  * Pins the public-config contract: the storefront payload may carry the
  * site key (public by design) but NEVER the siteverify secret. No row or a
- * disabled row → feature inert (false + null).
+ * disabled row â†’ feature inert (false + null).
  */
 
 import { describe, it, expect, vi } from "vitest";
@@ -24,19 +24,32 @@ function thenRows(row: unknown) {
 
 function makeDb(rows: unknown[]) {
   const queue = [...rows];
-  const db = {
-    select: vi.fn(() => ({
-      from: vi.fn(() => ({
-        where: vi.fn(() => thenRows(queue.shift())),
-      })),
-    })),
-  } as any;
+  // Each chain is awaitable directly (mirrors a real Drizzle query builder).
+  // The value is shifted off the queue the INSTANT `select()` is called â€”
+  // the one call every chain makes first, synchronously, in textual order â€”
+  // so consumption order matches construction order regardless of how each
+  // chain ends (.then(), .get(), .orderBy()).
+  function chain(): any {
+    const value = queue.shift();
+    const rows = value === undefined ? [] : Array.isArray(value) ? value : [value];
+    const c: any = {
+      from: () => c,
+      where: () => c,
+      innerJoin: () => c,
+      orderBy: () => c,
+      limit: () => c,
+      get: vi.fn(async () => rows[0] ?? null),
+      then: (resolve: (v: unknown) => void) => resolve(rows),
+    };
+    return c;
+  }
+  const db = { select: vi.fn(() => chain()) } as any;
   return db;
 }
 
 describe("getStoreConfig turnstile projection", () => {
-  it("no turnstile row → turnstileEnabled=false, turnstileSiteKey=null (feature inert)", async () => {
-    const db = makeDb([STORE_ROW, { pixelId: "px-1", enabled: false, conversionEvent: "Purchase" }, undefined, undefined, undefined]);
+  it("no turnstile row â†’ turnstileEnabled=false, turnstileSiteKey=null (feature inert)", async () => {
+    const db = makeDb([STORE_ROW, { pixelId: "px-1", enabled: false, conversionEvent: "Purchase" }, undefined, undefined, undefined, [], undefined]);
 
     const config = await getStoreConfig(db, "store-1");
 
@@ -45,13 +58,15 @@ describe("getStoreConfig turnstile projection", () => {
     expect(config?.otpEnabled).toBe(false);
   });
 
-  it("enabled turnstile row → turnstileEnabled=true and the public siteKey is exposed", async () => {
+  it("enabled turnstile row â†’ turnstileEnabled=true and the public siteKey is exposed", async () => {
     const db = makeDb([
       STORE_ROW,
       { pixelId: "px-1", enabled: true, conversionEvent: "Purchase" },
       undefined,
       { enabled: false },
       { enabled: true, siteKey: "0x4AAA-site" },
+      [],
+      undefined,
     ]);
 
     const config = await getStoreConfig(db, "store-1");
@@ -60,8 +75,8 @@ describe("getStoreConfig turnstile projection", () => {
     expect(config?.turnstileSiteKey).toBe("0x4AAA-site");
   });
 
-  it("disabled turnstile row → turnstileEnabled=false and siteKey hidden", async () => {
-    const db = makeDb([STORE_ROW, undefined, undefined, undefined, { enabled: false, siteKey: "0x4AAA-site" }]);
+  it("disabled turnstile row â†’ turnstileEnabled=false and siteKey hidden", async () => {
+    const db = makeDb([STORE_ROW, undefined, undefined, undefined, { enabled: false, siteKey: "0x4AAA-site" }, [], undefined]);
 
     const config = await getStoreConfig(db, "store-1");
 
@@ -76,6 +91,8 @@ describe("getStoreConfig turnstile projection", () => {
       undefined,
       undefined,
       { enabled: true, siteKey: "0x4AAA-site", secretKey: "0x4AAA-secret" },
+      [],
+      undefined,
     ]);
 
     const config = await getStoreConfig(db, "store-1");
@@ -85,12 +102,14 @@ describe("getStoreConfig turnstile projection", () => {
     expect(JSON.stringify(config)).not.toContain("secret_key");
   });
 
-  it("enabled tiktok row → tiktokPixelId exposed, token never leaks", async () => {
+  it("enabled tiktok row â†’ tiktokPixelId exposed, token never leaks", async () => {
     const db = makeDb([
       STORE_ROW,
       undefined,
       { pixelId: "tt-1", enabled: true, conversionEvent: "Lead", accessToken: "tok-secret" },
       undefined,
+      undefined,
+      [],
       undefined,
     ]);
 
@@ -103,12 +122,14 @@ describe("getStoreConfig turnstile projection", () => {
     expect(JSON.stringify(config)).not.toContain("access_token");
   });
 
-  it("disabled tiktok row → tiktokPixelId=null (feature inert, Meta untouched)", async () => {
+  it("disabled tiktok row â†’ tiktokPixelId=null (feature inert, Meta untouched)", async () => {
     const db = makeDb([
       STORE_ROW,
       { pixelId: "px-1", enabled: true, conversionEvent: "Purchase" },
       { pixelId: "tt-1", enabled: false, conversionEvent: "Lead" },
       undefined,
+      undefined,
+      [],
       undefined,
     ]);
 
@@ -118,12 +139,15 @@ describe("getStoreConfig turnstile projection", () => {
     expect(config?.pixelId).toBe("px-1");
   });
 
-  it("no form row → formVariant defaults to 'default' (existing behavior)", async () => {
+  it("no form row â†’ formVariant defaults to 'default' (existing behavior)", async () => {
     const db = makeDb([
       STORE_ROW,
       undefined,
       undefined,
       undefined,
+      undefined,
+      undefined,
+      [],
       undefined,
     ]);
 
@@ -132,7 +156,7 @@ describe("getStoreConfig turnstile projection", () => {
     expect(config?.formVariant).toBe("default");
   });
 
-  it("form row → formVariant exposed to the storefront", async () => {
+  it("form row â†’ formVariant exposed to the storefront", async () => {
     const db = makeDb([
       STORE_ROW,
       undefined,
@@ -140,6 +164,8 @@ describe("getStoreConfig turnstile projection", () => {
       undefined,
       undefined,
       { variant: "form_a" },
+      [],
+      undefined,
     ]);
 
     const config = await getStoreConfig(db, "store-1");
