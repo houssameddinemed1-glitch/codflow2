@@ -12,7 +12,7 @@ import {
   DzverifyError,
   DZVERIFY_ERRORS,
 } from "./dzverify";
-import { normalizeAlgerianPhone } from "./phone";
+import { normalizeAlgerianPhone } from "../../../../cod-shared/lib/phone";
 
 const API_KEY = "dz-key-test";
 

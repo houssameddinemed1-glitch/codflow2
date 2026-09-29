@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { storeOrderSchema } from "./validation";
-import { toLocalAlgerianMobile } from "@/endpoints/store-otp/phone";
+import { toLocalAlgerianMobile } from "../../../../cod-shared/lib/phone";
 
 function orderWith(phone: string) {
   return {

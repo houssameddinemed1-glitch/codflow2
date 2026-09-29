@@ -42,6 +42,12 @@ import {
   stockMovements,
 } from "../db/schema.pg";
 import type { PgDb } from "../db/client.pg";
+import { parseCheckoutFormPolicy } from "../checkout-form/policy";
+import { resolveStorefrontWidget } from "../whatsapp-widget/config";
+import {
+  serializeCustomFieldAnswers,
+  type CustomFieldAnswer,
+} from "../checkout-form/apply";
 
 export interface StoreOrderData {
   customerName: string;
@@ -61,6 +67,13 @@ export interface StoreOrderData {
   variantSelections?: Array<{ variantId: string; variantLabel?: string }>;
   /** Resolved landing page id — set by the caller from landingPageSlug (best-effort). */
   landingPageId?: string | null;
+  /**
+   * Checkout Form Policy capture. Both are already enforced and normalised by
+   * applyCheckoutPolicy in the handler — the engine stores what it is handed
+   * and never re-derives them, so there is exactly one place these rules live.
+   */
+  customerEmail?: string;
+  customFieldAnswers?: CustomFieldAnswer[];
   fbc?: string;
   fbp?: string;
   ttclid?: string;
@@ -114,8 +127,20 @@ export async function getStoreConfig(db: PgDb, storeId: string) {
     .from(storeFormConfig)
     .where(eq(storeFormConfig.storeId, storeId))
     .then((rows) => rows[0] ?? null);
+  // The raw policy column never leaves the server. This function spreads the
+  // whole store row, so a column is public the moment it exists unless it is
+  // removed by name here — the storefront gets the resolved projection instead,
+  // which is also the only shape a theme should ever have to understand.
+  const { checkoutFormJson, whatsappWidgetJson, ...publicStore } = store;
+
   return {
-    ...store,
+    ...publicStore,
+    checkoutForm: parseCheckoutFormPolicy(checkoutFormJson),
+    // Null whenever there is nothing to render — switched off, no number, or a
+    // number that no longer normalises. The theme holds one rule about this
+    // feature: render it, or don't. Costs no extra query: the column rides the
+    // store row this function already selected in full.
+    whatsapp: resolveStorefrontWidget(whatsappWidgetJson),
     pixelId: pixelRow?.enabled ? pixelRow.pixelId : null,
     conversionEvent: pixelRow?.enabled ? (pixelRow.conversionEvent as "Purchase" | "Purchase_Confirmed" | "Purchase_Delivered" | "Lead") : "Purchase",
     tiktokPixelId: tiktokRow?.enabled ? tiktokRow.pixelId : null,
@@ -1007,6 +1032,8 @@ export async function createStoreOrder(
       ipAddress: data.ipAddress ?? null,
       userAgent: data.userAgent ?? null,
       landingPageId: data.landingPageId ?? null,
+      customerEmail: data.customerEmail ?? null,
+      customFieldsJson: serializeCustomFieldAnswers(data.customFieldAnswers ?? []),
       createdAt: now,
       updatedAt: now,
     });

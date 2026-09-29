@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { toLocalAlgerianMobile } from "@/endpoints/store-otp/phone";
+import { toLocalAlgerianMobile } from "../../../../cod-shared/lib/phone";
 
 export const variantSelectionSchema = z.object({
   variantId: z.string().min(1),
