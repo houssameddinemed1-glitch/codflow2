@@ -27,6 +27,9 @@ export interface UpsertPixelConfigData {
   conversionEvent?: ConversionEvent;
   testMode?: boolean;
   enabled?: boolean;
+  /** Master switch for per-landing-page tracking. Defaults off; edits to
+   * unrelated settings must preserve the stored value. */
+  perPageTrackingEnabled?: boolean;
 }
 
 export async function upsertPixelConfig(
@@ -58,6 +61,7 @@ export async function upsertPixelConfig(
         conversionEvent: data.conversionEvent ?? existing.conversionEvent,
         testMode: data.testMode ?? existing.testMode,
         enabled: data.enabled ?? true,
+        perPageTrackingEnabled: data.perPageTrackingEnabled ?? existing.perPageTrackingEnabled,
         updatedAt: now,
       })
       .where(eq(storePixelConfig.storeId, storeId))
@@ -75,6 +79,7 @@ export async function upsertPixelConfig(
     conversionEvent: data.conversionEvent ?? "Purchase",
     testMode: data.testMode ?? false,
     enabled: data.enabled ?? true,
+    perPageTrackingEnabled: data.perPageTrackingEnabled ?? false,
     createdAt: now,
     updatedAt: now,
   };

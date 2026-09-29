@@ -473,6 +473,7 @@ export const products = pgTable("products", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   description: text("description"),
+  descriptionFormat: text("description_format").notNull().default("text"),
   handle: text("handle").notNull().unique(),
   currency: text("currency").notNull().default("DZD"),
   price: integer("price").notNull(),
@@ -644,7 +645,7 @@ export const companyApiLogs = pgTable("company_api_logs", {
   createdAt: text("created_at").notNull(),
 });
 
-export const storeLangEnum = pgEnum("stores_lang", ["ar", "en"]);
+export const storeLangEnum = pgEnum("stores_lang", ["ar", "en", "fr"]);
 export const storeStatusEnum = pgEnum("stores_status", ["active", "inactive"]);
 
 export const stores = pgTable("stores", {
@@ -681,6 +682,22 @@ export const stores = pgTable("stores", {
   announcementBar: text("announcement_bar"),
   /** When false, reviews are hidden on the storefront and submission is disabled. */
   reviewsEnabled: boolean("reviews_enabled").notNull().default(true),
+  /**
+   * Shopping cart opt-in. False (the default) keeps the storefront exactly as
+   * it is: the direct one-click order form, no cart. True adds "Add to cart"
+   * alongside it — the direct form is never replaced.
+   */
+  cartEnabled: boolean("cart_enabled").notNull().default(false),
+  /**
+   * Order subtotal (DZD) at or above which delivery is free.
+   * NULL = feature off. Distinct from 0, which would make EVERY order free.
+   */
+  freeShippingThreshold: integer("free_shipping_threshold"),
+  /**
+   * Which rate a basket spanning several shipping profiles pays:
+   * "highest" (dearest applicable rate, default) or "default_profile".
+   */
+  cartShippingMode: text("cart_shipping_mode").notNull().default("highest"),
   status: storeStatusEnum("status").notNull().default("active"),
   /** Plaintext storefront API key — written on every provision so the merchant can view it in settings. */
   storeApiKey: text("store_api_key"),
@@ -980,6 +997,35 @@ export const storePixelConfig = pgTable("store_pixel_config", {
   /** When true, CAPI events carry test_event_code to Meta's test stream instead of production measurement. */
   testMode: boolean("test_mode").notNull().default(false),
   enabled: boolean("enabled").notNull().default(true),
+  /**
+   * Master switch for per-landing-page tracking. While false, landing-page
+   * pixel rows are ignored and every page reports to this pixel (default).
+   */
+  perPageTrackingEnabled: boolean("per_page_tracking_enabled")
+    .notNull()
+    .default(false),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+/**
+ * A landing page's own Meta Pixel + CAPI configuration. No row = inherit the
+ * store. Kept off `landing_pages` so a credential never rides a public
+ * full-table select.
+ */
+export const landingPagePixelConfig = pgTable("landing_page_pixel_config", {
+  id: text("id").primaryKey(),
+  landingPageId: text("landing_page_id")
+    .notNull()
+    .unique()
+    .references(() => landingPages.id, { onDelete: "cascade" }),
+  pixelId: text("pixel_id").notNull(),
+  adAccountName: text("ad_account_name"),
+  accessToken: text("access_token").notNull(),
+  testEventCode: text("test_event_code"),
+  conversionEvent: conversionEventEnum("conversion_event").notNull().default("Purchase"),
+  testMode: boolean("test_mode").notNull().default(false),
+  enabled: boolean("enabled").notNull().default(true),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
@@ -1090,6 +1136,11 @@ export const capiEventLog = pgTable(
     eventName: text("event_name").notNull(),
     stage: text("stage").notNull().default("delivered"),
     status: text("status").notNull(),
+    /**
+     * Which Meta pixel this event was sent to. Nullable: rows written before
+     * migration 0029 genuinely do not know.
+     */
+    pixelId: text("pixel_id"),
     metaEventId: text("meta_event_id"),
     error: text("error"),
     sentAt: text("sent_at").notNull(),
@@ -1099,6 +1150,77 @@ export const capiEventLog = pgTable(
     claimUnique: uniqueIndex("idx_capi_event_log_claim").on(t.orderId, t.stage, t.eventName),
   })
 );
+
+/**
+ * Merchant-owned content pages: Terms, Privacy, Refund/Return, Shipping, and
+ * custom pages. Seeded from `cod-shared/legal/` templates at provision, then
+ * merchant-owned. The words live in `store_page_translations`.
+ */
+export const storePages = pgTable("store_pages", {
+  id: text("id").primaryKey(),
+  storeId: text("store_id")
+    .notNull()
+    .references(() => stores.id),
+  /** What this page *is*: terms | privacy | refund | shipping | custom. */
+  kind: text("kind").notNull(),
+  /** Public URL segment under `/pages/`, unique per store. */
+  slug: text("slug").notNull(),
+  /** Draft pages 404 on the storefront and are never indexed. */
+  status: text("status").notNull().default("published"),
+  showInFooter: boolean("show_in_footer").notNull().default(true),
+  position: integer("position").notNull().default(0),
+  /** Which template revision seeded this page; null for merchant-created pages. */
+  templateVersion: integer("template_version"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (t) => ({
+  slugUnique: uniqueIndex("idx_store_pages_slug").on(t.storeId, t.slug),
+  footerIdx: index("idx_store_pages_footer").on(t.storeId, t.status, t.position),
+}));
+
+/** One locale of one page. Composite primary key `(pageId, locale)`. */
+export const storePageTranslations = pgTable("store_page_translations", {
+  pageId: text("page_id")
+    .notNull()
+    .references(() => storePages.id, { onDelete: "cascade" }),
+  locale: text("locale").notNull(),
+  title: text("title").notNull(),
+  /** Sanitised at the write chokepoint; rendered as HTML, never re-parsed. */
+  bodyHtml: text("body_html").notNull(),
+  /** Derived from bodyHtml: meta-description fallback. */
+  bodyPlain: text("body_plain").notNull(),
+  metaTitle: text("meta_title"),
+  metaDescription: text("meta_description"),
+  /** 'template' = untouched seed, 'merchant' = edited at least once. */
+  source: text("source").notNull().default("template"),
+  updatedAt: text("updated_at").notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.pageId, t.locale] }),
+}));
+
+/**
+ * The merchant facts a legal document cannot be written without.
+ * Substituted into templates at seed time. RC/NIF appear only inside the
+ * documents, never in API projections.
+ */
+export const storeLegalProfile = pgTable("store_legal_profile", {
+  storeId: text("store_id")
+    .primaryKey()
+    .references(() => stores.id, { onDelete: "cascade" }),
+  legalName: text("legal_name"),
+  /** Registre de Commerce number. */
+  rcNumber: text("rc_number"),
+  /** Numéro d'Identification Fiscale. */
+  nif: text("nif"),
+  address: text("address"),
+  contactEmail: text("contact_email"),
+  contactPhone: text("contact_phone"),
+  /** 0 = no post-delivery return window offered; the clause is then omitted. */
+  returnWindowDays: integer("return_window_days").notNull().default(0),
+  deliveryMinDays: integer("delivery_min_days").notNull().default(2),
+  deliveryMaxDays: integer("delivery_max_days").notNull().default(7),
+  updatedAt: text("updated_at").notNull(),
+});
 
 export const sessions = pgTable("sessions", {
   id: text("id").primaryKey(),
@@ -1252,7 +1374,12 @@ export const abandonedOrders = pgTable("abandoned_orders", {
   productName: text("product_name"),
   variantId: text("variant_id"),
   variantLabel: text("variant_label"),
+  /** Cart value at abandonment: the basket subtotal, or one unit's price. */
   price: real("price"),
+  /** The whole basket. NULL for a single-product checkout. See migration 0028. */
+  itemsJson: text("items_json"),
+  /** Distinct lines in the basket, so the list can say "and 4 more" cheaply. */
+  itemCount: integer("item_count"),
   deliveryType: abandonedDeliveryTypeEnum("delivery_type"),
   fbc: text("fbc"),
   fbp: text("fbp"),
