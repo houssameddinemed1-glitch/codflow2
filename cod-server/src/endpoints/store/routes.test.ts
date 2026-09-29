@@ -11,6 +11,7 @@ import { openApiValidationHook } from "@/openapi/validation-hook";
 import { ERROR_CODES } from "../../../../cod-shared/errors/codes";
 import storeRouter from "./routes";
 import * as queries from "./queries";
+import { parseCheckoutFormPolicy } from "../../../../cod-shared/checkout-form/policy";
 
 vi.mock("@/db", () => ({ getDb: vi.fn(() => mockDb) }));
 vi.mock("./queries");
@@ -213,6 +214,7 @@ describe("Store API routes (OpenAPIHono)", () => {
         name: "أحمد بن علي",
       } as any);
       vi.mocked(queries.getDeliveryFee).mockResolvedValue(600 as any);
+      vi.mocked(queries.getCheckoutFormPolicy).mockResolvedValue({ policy: parseCheckoutFormPolicy(null), lang: "ar" } as any);
       vi.mocked(queries.createStoreOrder).mockResolvedValue({
         id: "ord_1",
         orderNumber: "ORD-20260821-0001",

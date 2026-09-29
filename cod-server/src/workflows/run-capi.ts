@@ -58,6 +58,7 @@ export async function runCapiEvent(raw: unknown): Promise<CapiRunResult> {
       customerId: orders.customerId,
       customerName: orders.customerName,
       phone: orders.phone,
+      customerEmail: orders.customerEmail,
       wilayaId: orders.wilayaId,
       communeId: orders.communeId,
       city: orders.city,
@@ -184,6 +185,7 @@ export async function runCapiEvent(raw: unknown): Promise<CapiRunResult> {
       eventSourceUrl: finalEventSourceUrl,
       userData: {
         phone: order.phone,
+        email: order.customerEmail,
         firstName,
         lastName,
         externalId: order.customerId,

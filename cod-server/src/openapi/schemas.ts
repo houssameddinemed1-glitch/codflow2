@@ -131,6 +131,7 @@ export {
   StoreOfferSummarySchema,
   StoreProductDetailSchema,
   StoreLandingPageSchema,
+  StoreWhatsAppWidgetSchema,
   StoreConfigSchema,
 } from "./schemas/store";
 

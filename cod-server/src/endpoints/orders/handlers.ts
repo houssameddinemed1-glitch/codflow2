@@ -189,6 +189,7 @@ export async function createOrder(c: Context<AppContext>) {
       communeId: validated.communeId ?? null,
       city: validated.city || null,
       address: validated.address || null,
+      customerEmail: validated.customerEmail ?? null,
       price: validated.price,
       notes: validated.notes || null,
       status: "new" as const,

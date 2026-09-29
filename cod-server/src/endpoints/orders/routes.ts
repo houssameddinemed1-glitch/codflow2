@@ -118,7 +118,7 @@ const updateOrderRoute = defineRoute({
   auth: { scope: SCOPES.ORDERS_UPDATE },
   tags: ["Orders"],
   summary: "Edit order",
-  description: `Edits an order before dispatch: customer info, destination (wilaya/commune/address), delivery type/fee/notes, and product lines including variant and per-unit price overrides.
+  description: `Edits an order before dispatch: customer info (incl. customerEmail — "" clears it), destination (wilaya/commune/address), delivery type/fee/notes, and product lines including variant and per-unit price overrides.
 
 When \`products\` is provided it replaces all lines; \`price\` is recomputed from the lines unless an explicit \`price\` override is given. Inventory diffs reconcile atomically.
 

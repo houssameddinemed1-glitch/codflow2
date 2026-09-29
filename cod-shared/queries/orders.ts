@@ -1234,6 +1234,8 @@ export interface UpdateOrderLineInput {
 export interface UpdateOrderDetailsInput {
   customerName?: string;
   phone?: string;
+  /** null clears the email; undefined leaves it untouched. */
+  customerEmail?: string | null;
   wilayaId?: number;
   communeId?: string;
   city?: string | null;
@@ -1406,6 +1408,7 @@ export async function updateOrderDetails(
   };
   if (input.customerName !== undefined) patch.customerName = input.customerName.trim();
   if (input.phone !== undefined) patch.phone = input.phone.trim();
+  if (input.customerEmail !== undefined) patch.customerEmail = input.customerEmail;
   if (input.wilayaId !== undefined) patch.wilayaId = input.wilayaId;
   if (input.communeId !== undefined) patch.communeId = input.communeId;
   if (input.city !== undefined) patch.city = input.city || null;

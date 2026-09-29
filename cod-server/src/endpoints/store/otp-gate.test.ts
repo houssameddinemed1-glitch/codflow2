@@ -18,6 +18,7 @@ import { ERROR_CODES } from "../../../../cod-shared/errors/codes";
 import storeRouter from "./routes";
 import * as storeQueries from "./queries";
 import * as otpConfigQueries from "../../../../cod-shared/queries/otp-config";
+import { parseCheckoutFormPolicy } from "../../../../cod-shared/checkout-form/policy";
 import * as capiHelpers from "@/workflows/capi-helpers";
 import { signOtpToken } from "@/endpoints/store-otp/token";
 
@@ -70,6 +71,7 @@ function stubSuccessfulOrderFlow() {
   vi.mocked(storeQueries.checkStoreOrderStock).mockResolvedValue(null as any);
   vi.mocked(storeQueries.findOrCreateCustomer).mockResolvedValue({ id: "cust-1", name: "Karim Benali" } as any);
   vi.mocked(storeQueries.getDeliveryFee).mockResolvedValue(600 as any);
+  vi.mocked(storeQueries.getCheckoutFormPolicy).mockResolvedValue({ policy: parseCheckoutFormPolicy(null), lang: "ar" } as any);
   vi.mocked(storeQueries.createStoreOrder).mockResolvedValue({
     id: "ord-1",
     orderNumber: "ORD-20260901-0001",
