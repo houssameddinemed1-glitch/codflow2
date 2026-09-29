@@ -217,7 +217,6 @@ export const ar: StoreFrontContent = {
   ariaBrowseCategoryProducts: "تصفح منتجات {category}",
   ariaProductCard: "{name} - {price} {currency}",
   ariaStarRating: "{n} نجمة",
-  navContact: "اتصل بنا",
   thankYouPageTitle: "تم استلام طلبك",
   defaultMetaDescription: "تسوق من {storeName} - أفضل المنتجات بأسعار مناسبة مع توصيل لجميع الولايات",
 

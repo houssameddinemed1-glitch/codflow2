@@ -143,20 +143,24 @@ const jsonLd = getProductJsonLd(product, basePrice);
   </div>
 </div>
 
-<!-- ── STICKY ORDER CTA — fixed to the bottom, always visible while
-     scrolling (mobile only). Anchor scroll (no JS) jumps to the form. ── -->
+<!-- ── STICKY ORDER CTA — fixed to the bottom on mobile while the order form is out of
+     view; sticky-cta.ts hides it via IntersectionObserver the moment the form enters the
+     viewport. Mobile-only: hidden on desktop where the form is already sticky in column 2. ── -->
 {!isOutOfStock && (
-  <a href="#order-section" id="product-sticky-cta" class="btn-primary product-sticky-cta lg:hidden">
-    {content.orderCta}
-    <Icon name="heroicons:chevron-down" class="w-5 h-5" />
+  <a
+    href="#order-section"
+    id="product-sticky-cta"
+    class="btn-primary product-sticky-cta lg:hidden"
+  >
+    <span>{content.orderCta}</span>
+    <Icon name="heroicons:chevron-down" class="w-5 h-5 shrink-0" />
   </a>
 )}
 
 <style>
-  /* Sticky CTA — always visible while scrolling (mobile only via lg:hidden).
-     Scoped here (not the page) so the rule reaches this component's markup.
-     Colors/radius/shadow come from .btn-primary + tokens; sizes/offsets
-     are layout, not design. */
+  /* Sticky CTA — floats above content on mobile until the form scrolls into
+     view (sticky-cta.ts toggles .is-hidden). Colors/radius/shadow come
+     from .btn-primary + tokens; sizes/offsets are layout, not design. */
   .product-sticky-cta {
     position: fixed;
     bottom: calc(var(--safe-bottom) + 0.75rem);
@@ -166,6 +170,17 @@ const jsonLd = getProductJsonLd(product, basePrice);
     z-index: 45;
     box-shadow: var(--shadow-primary);
     font-weight: 800;
+    transition: transform 0.25s ease, opacity 0.25s ease;
+  }
+  .product-sticky-cta.is-hidden {
+    transform: translateY(150%);
+    opacity: 0;
+    pointer-events: none;
+  }
+  @media (min-width: 1024px) {
+    .product-sticky-cta {
+      display: none !important;
+    }
   }
 </style>
 
