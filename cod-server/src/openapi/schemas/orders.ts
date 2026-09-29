@@ -181,6 +181,14 @@ const OrderBaseSchema = z.object({
   codPaymentId: z.string().nullable(),
   feePaymentId: z.string().nullable(),
 
+  // Checkout form capture
+  customerEmail: z.string().nullable().optional().openapi({
+    description: "Email supplied at order time",
+  }),
+  customFieldsJson: z.string().nullable().optional().openapi({
+    description: "Custom checkout fields snapshot JSON",
+  }),
+
   // Timestamps
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),

@@ -530,6 +530,9 @@ export const orders = sqliteTable("orders", {
   /** Landing page the order was placed from (best-effort attribution — never blocks an order). */
   landingPageId: text("landing_page_id"),
 
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+
   // ── Checkout form capture (appended by migration 0031) ────────────────────
   //
   // These sit after createdAt/updatedAt deliberately. cod-server's mock db maps
@@ -553,9 +556,6 @@ export const orders = sqliteTable("orders", {
    * against the live policy. Carriers and pricing never read it.
    */
   customFieldsJson: text("custom_fields_json"),
-
-  createdAt: text("created_at").notNull(),
-  updatedAt: text("updated_at").notNull(),
 });
 
 export const orderAssignments = sqliteTable("order_assignments", {
@@ -886,6 +886,8 @@ export const stores = sqliteTable("stores", {
   status: text("status", { enum: ["active", "inactive"] }).notNull().default("active"),
   /** Plaintext storefront API key — written on every provision so the merchant can view it in settings. */
   storeApiKey: text("store_api_key"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
 
   // ── Checkout form policy (appended by migration 0031) ─────────────────────
   //
@@ -923,9 +925,6 @@ export const stores = sqliteTable("stores", {
    * Last for the same positional reason as the columns above.
    */
   whatsappWidgetJson: text("whatsapp_widget_json"),
-
-  createdAt: text("created_at").notNull(),
-  updatedAt: text("updated_at").notNull(),
 });
 
 /**

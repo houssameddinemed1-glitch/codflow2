@@ -3,6 +3,7 @@
  * functions the public endpoints consume (same module family, one surface).
  */
 export * from "../../../../cod-shared/queries/store";
+export { getCheckoutFormPolicy } from "../../../../cod-shared/queries/checkout-form";
 export {
   getLandingPageBySlug,
   getLandingPageDetailBySlug,

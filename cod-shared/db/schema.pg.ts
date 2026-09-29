@@ -403,10 +403,13 @@ export const orders = pgTable("orders", {
   userAgent: text("user_agent"),
   /** Landing page the order was placed from (best-effort attribution — never blocks an order). */
   landingPageId: text("landing_page_id"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
   /**
    * The shopper's email as captured at order time, when the merchant enabled
    * the field on the Checkout Form page. Snapshot like customerName/phone.
-   * Never sent to carriers. (Upstream migration 0031.)
+   * Never sent to carriers. Appended last — see cod-shared/db/schema.ts.
+   * (Upstream migration 0031.)
    */
   customerEmail: text("customer_email"),
   /**
@@ -415,8 +418,6 @@ export const orders = pgTable("orders", {
    * (Upstream migration 0031.)
    */
   customFieldsJson: text("custom_fields_json"),
-  createdAt: text("created_at").notNull(),
-  updatedAt: text("updated_at").notNull(),
 });
 
 export const orderAssigneeTypeEnum = pgEnum("order_assignments_assignee_type", ["driver", "company"]);
@@ -683,11 +684,13 @@ export const stores = pgTable("stores", {
   status: storeStatusEnum("status").notNull().default("active"),
   /** Plaintext storefront API key — written on every provision so the merchant can view it in settings. */
   storeApiKey: text("store_api_key"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
   /**
    * Checkout Form Policy JSON — which fields the storefront order form
    * renders, enforcement, and custom fields. NULL = defaults.
    * Shape: CheckoutFormPolicy (cod-shared/checkout-form).
-   * (Upstream migration 0031.)
+   * Appended last — see cod-shared/db/schema.ts. (Upstream migration 0031.)
    */
   checkoutFormJson: text("checkout_form_json"),
   /**
@@ -696,8 +699,6 @@ export const stores = pgTable("stores", {
    * (Upstream migration 0032.)
    */
   whatsappWidgetJson: text("whatsapp_widget_json"),
-  createdAt: text("created_at").notNull(),
-  updatedAt: text("updated_at").notNull(),
 });
 
 export const storeApiKeys = pgTable("store_api_keys", {

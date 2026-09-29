@@ -227,11 +227,22 @@ export function orderRow(overrides: Record<string, unknown> = {}): Record<string
     fee_payment_id: null,
     fbc: null,
     fbp: null,
+    ttclid: null,
+    ttp: null,
+    utm_source: null,
+    utm_medium: null,
+    utm_campaign: null,
     ip_address: null,
     user_agent: null,
     landing_page_id: null,
     created_at: NOW,
     updated_at: NOW,
+    // Checkout form capture (migration 0031). Last, exactly where the schema
+    // puts them: callers that spread this fixture and then append joined
+    // columns depend on every orders column being present and in order —
+    // a missing one shifts every joined value by a slot.
+    customer_email: null,
+    custom_fields_json: null,
     ...overrides,
   };
 }
