@@ -2,7 +2,7 @@ import { Context } from "hono";
 import type { AppContext } from "@/types";
 import { getDb } from "@/db";
 import * as queries from "./queries";
-import { storeOrderSchema, storeReviewSchema } from "./validation";
+import { storeOrderSchema, storeReviewSchema, validateCartSchema } from "./validation";
 import { NotFoundError, ValidationError, ConflictError, BusinessLogicError } from "@/lib/errors/classes";
 import { ERROR_CODES } from "../../../../cod-shared/errors/codes";
 import { assertOtpVerification } from "./otp-gate";
@@ -17,7 +17,12 @@ import { reconcileAbandonedOrdersOnOrder } from "../../../../cod-shared/queries/
 import { resolveConversionForStage, getCapiWorkflowId } from "@/workflows/capi-helpers";
 import { resolveTiktokForStage, getTiktokWorkflowId } from "@/workflows/tiktok-conversion-model";
 import { publishWorkflow } from "@/lib/queue";
-import { stores } from "../../../../cod-shared/db/schema.pg";
+import { stores, orders } from "../../../../cod-shared/db/schema.pg";
+import { normalizeOrderLines, CartValidationError, type CartLine } from "../../../../cod-shared/queries/cart";
+import { loadCatalogSnapshot, resolveCartLines } from "../../../../cod-shared/queries/catalog-snapshot";
+import { resolveCartOffers } from "../../../../cod-shared/queries/offers-cart";
+import { resolveTrackingConfig } from "../../../../cod-shared/queries/tracking-config";
+import type { PageLocale } from "../../../../cod-shared/legal/kinds";
 import { eq } from "drizzle-orm";
 
 export async function getStoreConfig(c: Context<AppContext>) {
@@ -445,4 +450,177 @@ export async function submitReview(c: Context<AppContext>) {
   });
 
   return c.json({ success: true, data: { id: review.id } }, 201);
+}
+
+/**
+ * A published legal or custom page, in the store's own language — the same
+ * `Promise.all`-lean shape as the rest of this file: one lookup for the
+ * store's locale, one resolved read. Draft, unknown, and foreign-store slugs
+ * all answer the same 404, so nothing about a page's existence leaks.
+ */
+export async function getStorePage(c: Context<AppContext>) {
+  const db = getDb(c.env.DB);
+  const storeId = c.get("storeId")!;
+  const slug = c.req.param("slug")!;
+
+  const storeRow = await db.select({ lang: stores.lang }).from(stores).where(eq(stores.id, storeId)).then((rows) => rows[0] ?? null);
+  if (!storeRow) throw new NotFoundError("Store", storeId);
+
+  const page = await queries.resolvePublishedPage(db, storeId, slug, storeRow.lang as PageLocale);
+  if (!page) throw new NotFoundError("Store Page", slug);
+
+  return c.json({ success: true, data: page }, 200);
+}
+
+/**
+ * Which Meta pixel this order belongs to, and which browser event the
+ * thank-you page should fire for it.
+ *
+ * The thank-you page cannot work this out for itself: it knows the order id
+ * and nothing about which landing page the shopper came from, and
+ * landing-page attribution is best-effort — an unknown, draft or archived
+ * slug leaves the order unattributed, and a browser trusting that slug would
+ * fire at a pixel the server never recorded. Asking is the only way the two
+ * sides cannot drift.
+ *
+ * Returns the DECISION, not the configuration: `event` is null whenever no
+ * browser event should fire, which deletes the copy of the conversion-stage
+ * rule that used to live in the theme.
+ *
+ * Deliberately narrow: an unguessable order id in, a public pixel id and an
+ * event name out. No customer, no total, no contents, and never a token.
+ */
+export async function getStoreOrderTracking(c: Context<AppContext>) {
+  const db = getDb(c.env.DB);
+  const orderId = c.req.param("id")!;
+
+  const order = await db
+    .select({ id: orders.id, landingPageId: orders.landingPageId })
+    .from(orders)
+    .where(eq(orders.id, orderId))
+    .then((rows) => rows[0] ?? null);
+  if (!order) throw new NotFoundError("Order", orderId);
+
+  const config = await resolveTrackingConfig(db, {
+    storeId: c.get("storeId")!,
+    landingPageId: order.landingPageId,
+  });
+
+  if (!config?.enabled || !config.pixelId) {
+    return c.json({ success: true, data: { pixelId: null, event: null } }, 200);
+  }
+
+  const decision = resolveConversionForStage(config.conversionEvent, "checkout");
+
+  return c.json(
+    {
+      success: true,
+      data: {
+        pixelId: config.pixelId,
+        event: decision.shouldFire ? decision.eventName ?? null : null,
+      },
+    },
+    200,
+  );
+}
+
+/**
+ * POST /store/cart/validate
+ *
+ * Re-prices and re-checks a basket so the cart drawer can tell the truth
+ * before the shopper commits. Read-only: nothing is written and no stock is
+ * reserved.
+ *
+ * It answers from the SAME snapshot, the SAME pricing function and the SAME
+ * offer rules the order engine uses, which is what makes the displayed total
+ * and the charged total identical by construction rather than by agreement.
+ *
+ * The free-delivery figure is subtotal-based, so it can be answered before the
+ * shopper has typed an address. Delivery itself still depends on the wilaya
+ * and is resolved at checkout.
+ */
+export async function validateCart(c: Context<AppContext>) {
+  const db = getDb(c.env.DB);
+  const bodyData: any = (c.req as any).valid?.("json");
+  const data: import("./validation").ValidateCartInput =
+    bodyData ?? validateCartSchema.parse(await c.req.json());
+
+  let lines: CartLine[];
+  try {
+    lines = normalizeOrderLines({
+      productId: data.items[0].productId,
+      productName: data.items[0].productName,
+      quantity: data.items[0].quantity,
+      items: data.items,
+    });
+  } catch (err) {
+    if (err instanceof CartValidationError) {
+      throw new ValidationError(err.message, ERROR_CODES.VALUE_OUT_OF_RANGE, err.detail);
+    }
+    throw err;
+  }
+
+  const now = new Date().toISOString();
+  const snapshot = await loadCatalogSnapshot(db, lines, now);
+  const resolved = resolveCartLines(snapshot, lines);
+
+  // Only orderable lines count toward the subtotal and the offers. A line the
+  // shopper must fix should not inflate a free-delivery promise it cannot keep.
+  const orderable = resolved.filter((entry) => entry.blocker === null);
+  const subtotal = orderable.reduce((sum, entry) => sum + entry.lineTotal, 0);
+
+  const { earned, freeShipping } = resolveCartOffers(
+    orderable.map((entry) => entry.line),
+    snapshot.offers,
+  );
+
+  const storeId = c.get("storeId");
+  const store = storeId
+    ? await db
+        .select({ freeShippingThreshold: stores.freeShippingThreshold })
+        .from(stores)
+        .where(eq(stores.id, storeId))
+        .then((rows) => rows[0] ?? null)
+    : undefined;
+  const threshold = store?.freeShippingThreshold ?? null;
+  const thresholdActive = threshold != null && threshold > 0;
+
+  return c.json(
+    {
+      success: true,
+      data: {
+        lines: resolved.map((entry) => ({
+          productId: entry.line.productId,
+          variantId: entry.line.variantId,
+          variantLabel: entry.line.variantLabel,
+          productName: entry.productName,
+          quantity: entry.line.quantity,
+          unitPrice: entry.unitPrice,
+          lineTotal: entry.lineTotal,
+          maxQuantity: entry.maxQuantity,
+          blocker: entry.blocker,
+        })),
+        subtotal,
+        rewards: earned.map((item) => ({
+          offerId: item.offer.id,
+          productId: item.offer.rewardProductId,
+          productName:
+            (item.offer.rewardProductId
+              ? snapshot.products.get(item.offer.rewardProductId)?.name
+              : null) ?? null,
+          quantity: item.offer.rewardQuantity,
+        })),
+        freeDelivery: {
+          /** Earned by a single-product basket's free-shipping offer. */
+          fromOffer: freeShipping,
+          threshold: thresholdActive ? threshold : null,
+          qualified: thresholdActive ? subtotal >= threshold : false,
+          /** How much more to spend to qualify. 0 once qualified or inactive. */
+          remaining:
+            thresholdActive && subtotal < threshold ? threshold - subtotal : 0,
+        },
+      },
+    },
+    200,
+  );
 }

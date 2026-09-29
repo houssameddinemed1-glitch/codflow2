@@ -11,12 +11,14 @@ import { OpenAPIHono, z } from "@hono/zod-openapi";
 import type { AppContext } from "@/types";
 import { defineRoute } from "@/lib/route-builder";
 import * as h from "./handlers";
-import { storeOrderSchema, storeReviewSchema } from "./validation";
+import { storeOrderSchema, storeReviewSchema, validateCartSchema } from "./validation";
 import {
   StoreConfigSchema,
   StoreProductListSchema,
   StoreProductDetailSchema,
   StoreLandingPageSchema,
+  StoreOrderTrackingSchema,
+  StorePagePublicSchema,
   ProductCategoryRowSchema,
   SuccessResponseSchema,
 } from "@/openapi/schemas";
@@ -285,6 +287,108 @@ const createStoreOrderRoute = defineRoute({
   handler: h.createStoreOrder,
 });
 
+const pageSlugParams = z.object({
+  slug: z.string().openapi({ example: "refund-policy" }),
+});
+
+const getStorePageRoute = defineRoute({
+  method: "get",
+  path: "/pages/{slug}",
+  auth: "store",
+  tags: ["Store API"],
+  summary: "Get a published store page",
+  description:
+    "Get a Terms/Privacy/Refund/Shipping/custom page by its public slug, resolved to the store's own language — the storefront serves exactly one locale per store (stores.lang). Falls back to the platform default locale, then to whichever locale exists, only when the store's own language has no translation for this page; the actual locale served is in the response's `locale` field. Draft or unknown slugs return 404 — never a soft 200 with empty content.",
+  operationId: "getStorePage",
+  params: pageSlugParams,
+  responses: {
+    200: {
+      description: "The resolved page, already-sanitised HTML — render with set:html, never re-sanitise",
+      content: jsonContent(SuccessResponseSchema(StorePagePublicSchema)),
+    },
+    404: { description: "Page not found, or exists only as a draft" },
+  },
+  handler: h.getStorePage,
+});
+
+const getStoreOrderTrackingRoute = defineRoute({
+  method: "get",
+  path: "/orders/{id}/tracking",
+  auth: "store",
+  tags: ["Store API"],
+  summary: "Get an order's tracking destination",
+  description: `Which Meta pixel this order belongs to, and which browser event the thank-you page should fire for it.
+
+Returns the decision, not the configuration. \`event\` is null when no browser event should fire — either tracking is off, or the merchant's conversion fires further down the funnel (phone confirmation, delivery) from the server only.
+
+Deliberately narrow: nothing about the order itself is returned, and never an access token.`,
+  operationId: "getStoreOrderTracking",
+  params: z.object({
+    id: z.string().openapi({ description: "Order UUID", example: "ord_abc123" }),
+  }),
+  responses: {
+    200: {
+      description: "The order's tracking destination",
+      content: jsonContent(SuccessResponseSchema(StoreOrderTrackingSchema)),
+    },
+    404: { description: "Order not found" },
+  },
+  handler: h.getStoreOrderTracking,
+});
+
+const validateCartRoute = defineRoute({
+  method: "post",
+  path: "/cart/validate",
+  auth: "store",
+  tags: ["Store API"],
+  summary: "Re-price and check a basket",
+  description:
+    "Read-only. Returns what the catalog says about a basket right now, so the cart can show the truth before the shopper commits. Nothing is written and no stock is reserved. Blocked lines are excluded from `subtotal`, from offer evaluation and from the free-delivery calculation.",
+  operationId: "validateStoreCart",
+  body: validateCartSchema,
+  responses: {
+    200: {
+      description: "Basket priced and checked against the live catalog",
+      content: jsonContent(
+        z.object({
+          success: z.boolean().openapi({ example: true }),
+          data: z.object({
+            lines: z.array(
+              z.object({
+                productId: z.string(),
+                variantId: z.string().nullable(),
+                variantLabel: z.string().nullable(),
+                productName: z.string(),
+                quantity: z.number().int(),
+                unitPrice: z.number(),
+                lineTotal: z.number(),
+                maxQuantity: z.number().int().nullable(),
+                blocker: z.enum(["missing", "unlisted", "out_of_stock"]).nullable(),
+              }),
+            ),
+            subtotal: z.number(),
+            rewards: z.array(
+              z.object({
+                offerId: z.string(),
+                productId: z.string().nullable(),
+                productName: z.string().nullable(),
+                quantity: z.number().int(),
+              }),
+            ),
+            freeDelivery: z.object({
+              fromOffer: z.boolean(),
+              threshold: z.number().int().nullable(),
+              qualified: z.boolean(),
+              remaining: z.number(),
+            }),
+          }),
+        }),
+      ),
+    },
+  },
+  handler: h.validateCart,
+});
+
 // ─── Reviews ──────────────────────────────────────────────────────────────────
 
 const listStoreReviewsRoute = defineRoute({
@@ -357,6 +461,9 @@ router.openapi(listStoreCategoriesRoute.route, listStoreCategoriesRoute.handler)
 router.openapi(getShippingRatesRoute.route, getShippingRatesRoute.handler);
 router.openapi(communesRoute.route, communesRoute.handler);
 router.openapi(createStoreOrderRoute.route, createStoreOrderRoute.handler);
+router.openapi(getStorePageRoute.route, getStorePageRoute.handler);
+router.openapi(getStoreOrderTrackingRoute.route, getStoreOrderTrackingRoute.handler);
+router.openapi(validateCartRoute.route, validateCartRoute.handler);
 router.openapi(listStoreReviewsRoute.route, listStoreReviewsRoute.handler);
 router.openapi(submitStoreReviewRoute.route, submitStoreReviewRoute.handler);
 

@@ -214,7 +214,7 @@ export const getProductTools = (db: ReturnType<typeof getDb>) => ({
       "Creates a new product in the catalog. " +
       "SIMPLE PRODUCTS (hasVariants=false, the default): must include `sku` (unique), `name`, and `price` (integer DZD). " +
       "VARIANT PRODUCTS (hasVariants=true): omit `sku` here — each variant carries its own SKU added via createProductVariant. " +
-      "Optional: description, handle (auto-generated from name if omitted), compareAtPrice, costPrice, type (PHYSICAL|DIGITAL), " +
+      "Optional: description, descriptionFormat ('text'|'html'; 'text' renders literally, 'html' is sanitised server-side against the rich-text allow-list), handle (auto-generated from name if omitted), compareAtPrice, costPrice, type (PHYSICAL|DIGITAL), " +
       "variantOptions (array of {name, values}), inventory (default 0), lowStockThreshold (default 5), trackInventory (default true), " +
       "categoryId, tags (string array), visibility (default true), status (DRAFT|ACTIVE|ARCHIVED, default ACTIVE), " +
       "showInStore (default true), storeFeatured (default false), shippingProfileId.",

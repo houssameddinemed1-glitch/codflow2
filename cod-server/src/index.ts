@@ -44,6 +44,7 @@ import storeAbandonedRoutes from "@/endpoints/abandoned-orders/store-routes";
 import storeOtpRoutes from "@/endpoints/store-otp/store-routes";
 import checkoutFormRoutes from "@/endpoints/checkout-form/routes";
 import whatsappWidgetRoutes from "@/endpoints/whatsapp-widget/routes";
+import storePagesRoutes from "@/endpoints/store-pages/routes";
 import { internalWorkflowsRouter } from "@/workflows/routes";
 
 // OpenAPIHono extends Hono: existing routes/middleware keep working, and
@@ -153,6 +154,7 @@ app.route("/api/analytics", analyticsRoutes);
 app.route("/api/abandoned-orders", abandonedOrdersRoutes);
 app.route("/api/checkout-form", checkoutFormRoutes);
 app.route("/api/whatsapp-widget", whatsappWidgetRoutes);
+app.route("/api/store-pages", storePagesRoutes);
 
 // 404 handler
 app.notFound((c) => {

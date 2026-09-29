@@ -130,10 +130,25 @@ export {
   StoreProductListSchema,
   StoreOfferSummarySchema,
   StoreProductDetailSchema,
+  StorePublicTrackingSchema,
   StoreLandingPageSchema,
   StoreWhatsAppWidgetSchema,
   StoreConfigSchema,
+  StoreOrderTrackingSchema,
+  StorePagePublicSchema,
 } from "./schemas/store";
+
+export {
+  StorePageKindEnum,
+  StorePageStatusEnum,
+  PageLocaleEnum,
+  TranslationSourceEnum,
+  StorePageTranslationSummarySchema,
+  StorePageSummarySchema,
+  StorePageTranslationBodySchema,
+  StorePageDetailSchema,
+  StoreLegalProfileSchema,
+} from "./schemas/store-pages";
 
 // ─── Orders ───────────────────────────────────────────────────────────────────
 

@@ -6,6 +6,33 @@ export const variantSelectionSchema = z.object({
   variantLabel: z.string().optional(),
 });
 
+/**
+ * One line of a cart request.
+ *
+ * `pricePerUnit` is accepted for storefront UI continuity and is display-only:
+ * the server resolves every price from the catalog row. Bounds here mirror
+ * MAX_LINE_QUANTITY in cod-shared/queries/cart.ts, which re-checks them after
+ * duplicate lines are merged — two lines of 60 for one variant are 120 units.
+ */
+export const cartItemSchema = z.object({
+  productId: z.string().min(1).max(200),
+  productName: z.string().min(1).max(200),
+  variantId: z.preprocess(
+    (v) => (v === "" || v == null ? undefined : v),
+    z.string().min(1).max(200).optional(),
+  ),
+  variantLabel: z.preprocess(
+    (v) => (v === "" || v == null ? undefined : v),
+    z.string().max(100).optional(),
+  ),
+  quantity: z.number().int().min(1).max(100),
+  pricePerUnit: z.number().nonnegative().optional(),
+  offerId: z.preprocess(
+    (v) => (v === "" || v == null ? undefined : v),
+    z.string().optional(),
+  ),
+});
+
 export const storeOrderSchema = z.object({
   customerName: z.string().min(2).max(100),
   // Algerian mobile only, normalized to the canonical local form "05XXXXXXXX".
@@ -107,6 +134,25 @@ export const storeOrderSchema = z.object({
     (v) => (v === "" || v == null ? undefined : v),
     z.string().min(1).max(60).optional()
   ),
+  // Cart request. Accepted and validated here so POST /store/cart/validate
+  // and a future cart checkout share the shape; createStoreOrder still
+  // requires the flat single-product fields (the cart order engine lands
+  // separately) and ignores this field.
+  items: z.preprocess(
+    (v) => {
+      if (!v) return undefined;
+      if (Array.isArray(v)) return v.length === 0 ? undefined : v;
+      // Form submissions send it as a JSON string, like variantSelections.
+      if (typeof v !== "string" || v === "[]") return undefined;
+      try {
+        const parsed = JSON.parse(v);
+        return Array.isArray(parsed) && parsed.length > 0 ? parsed : undefined;
+      } catch {
+        return undefined;
+      }
+    },
+    z.array(cartItemSchema).min(1).max(20).optional(),
+  ),
 });
 
 export type StoreOrderInput = z.infer<typeof storeOrderSchema>;
@@ -135,3 +181,16 @@ export const storeReviewSchema = z.object({
 });
 
 export type StoreReviewInput = z.infer<typeof storeReviewSchema>;
+
+/**
+ * Cart validation request.
+ *
+ * Deliberately narrow: this endpoint prices and checks a basket, so it needs
+ * the basket and nothing else. No customer details, no address, nothing the
+ * shopper has not typed yet.
+ */
+export const validateCartSchema = z.object({
+  items: z.array(cartItemSchema).min(1).max(20),
+});
+
+export type ValidateCartInput = z.infer<typeof validateCartSchema>;
