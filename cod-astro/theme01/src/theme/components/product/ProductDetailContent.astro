@@ -138,6 +138,7 @@ const jsonLd = getProductJsonLd(product, basePrice);
         turnstileEnabled={config.turnstileEnabled === true}
         turnstileSiteKey={config.turnstileSiteKey ?? null}
         variant={config.formVariant ?? null}
+        formPolicy={config.checkoutForm}
       />
     </div>
   </div>

@@ -2,112 +2,196 @@
 import Select from "@/theme/components/ui/Select.astro";
 import { Icon } from "astro-icon/components";
 import { WILAYAS } from "@/core/data/wilayas";
+import CustomFieldRow from "./CustomFieldRow.astro";
+import type { CheckoutFormPolicy } from "@/core/api/types";
 
 interface Props {
   content: any;
   fieldErrors: any;
   isRTL: boolean;
+  /**
+   * The merchant's order-form configuration, from `GET /store/config`.
+   *
+   * Optional, and defaulted to the form as it has always been, for two reasons:
+   * a storefront running against a cod-server from before this feature gets no
+   * policy at all, and every existing caller keeps working untouched.
+   */
+  formPolicy?: CheckoutFormPolicy;
 }
 
-const { content, fieldErrors, isRTL } = Astro.props;
+const { content, fieldErrors, isRTL, formPolicy } = Astro.props;
+
+const policy: CheckoutFormPolicy = {
+  address: "optional",
+  notes: "optional",
+  email: "hidden",
+  deliveryOptions: { home: true, stopDesk: true },
+  customFields: [],
+  ...(formPolicy ?? {}),
+};
+
+// A hidden field ships no markup at all — the same choice the cart makes when a
+// merchant leaves it off. Rendering it disabled would still put it in the DOM,
+// where a script or a curious shopper can turn it back on.
+const showEmail = policy.email !== "hidden";
+const showNotes = policy.notes !== "hidden";
+const showAddress = policy.address !== "hidden";
+const addressRequired = policy.address === "required";
+
+// Both are never false: cod-shared repairs a policy with neither option on,
+// because a form nobody can submit is worse than ignoring the setting.
+const deliveryChoices = [
+  { value: "home", icon: "heroicons:home", label: content.formHomeDelivery, on: policy.deliveryOptions.home },
+  { value: "stop_desk", icon: "heroicons:cube", label: content.formStopDesk, on: policy.deliveryOptions.stopDesk },
+].filter((choice) => choice.on);
+
+// With one option there is nothing to choose. The card still renders — the
+// shopper does want to know HOW the order arrives — and the radio still carries
+// the value, but it stops behaving like a button: nothing happens when it is
+// tapped, so it should not invite the tap. Nothing announces that the other
+// option is missing either; a shopper cannot miss a choice they were never
+// offered, and naming the absence only raises a question about it.
+const singleDelivery = deliveryChoices.length === 1;
+
+// A middle dot rather than an em dash: the option sits in a panel only as wide
+// as its trigger, and the dash cost enough room to wrap the longer wilaya names
+// onto a second line.
+const wilayaOptions = WILAYAS.map((w) => ({
+  value: w.id,
+  label: `${w.id.toString().padStart(2, "0")} · ${isRTL ? w.nameAr : w.name}`,
+}));
 ---
 
-<div class="space-y-5 pt-2">
+<div class="space-y-4 pt-2">
   <div class="flex items-center gap-3 py-2">
     <div class="h-px flex-1 bg-black/[.05]"></div>
     <span class="text-[0.6875rem] font-black uppercase tracking-[0.2em]" style="color: var(--clr-text)">{content.formDeliverySection}</span>
     <div class="h-px flex-1 bg-black/[.05]"></div>
   </div>
 
-  <!-- Name -->
-  <div>
-    <label for="f-name" class="form-label">
-      {content.formNameLabel} <span class="text-red-400">*</span>
-    </label>
-    <input
-      id="f-name" type="text" name="customerName"
-      required autocomplete="name"
-      placeholder={content.formNamePlaceholder}
-      class:list={["form-input", fieldErrors.customerName && "error"]}
-    />
-    {fieldErrors.customerName && (
-      <p class="text-[0.75rem] text-red-500 font-bold mt-2 ps-1">{fieldErrors.customerName[0]}</p>
-    )}
+  <!-- Name + Phone — paired so the two shortest answers cost one row, not two.
+       Each label is kept for assistive tech and shown inside the field, which is
+       what removes roughly a third of the scroll to the submit button. -->
+  <div class="grid grid-cols-1 min-[360px]:grid-cols-2 gap-3">
+    <div>
+      <label for="f-name" class="sr-only">{content.formNameLabel}</label>
+      <input
+        id="f-name" type="text" name="customerName"
+        required autocomplete="name"
+        placeholder={`${content.formNameLabel} *`}
+        class:list={["form-input", fieldErrors.customerName && "error"]}
+      />
+      {fieldErrors.customerName && (
+        <p class="text-[0.75rem] text-red-500 font-bold mt-2 ps-1">{fieldErrors.customerName[0]}</p>
+      )}
+    </div>
+
+    <div>
+      <label for="f-phone" class="sr-only">{content.formPhoneLabel}</label>
+      <!-- No `dir="ltr"`: it would left-align the Arabic placeholder and break
+           the row. Digits are laid out left-to-right by the bidi algorithm on
+           their own, so the number still reads correctly as it is typed. -->
+      <input
+        id="f-phone" type="tel" name="phone"
+        required autocomplete="tel" inputmode="tel"
+        placeholder={`${content.formPhoneLabel} *`}
+        class:list={["form-input", fieldErrors.phone && "error"]}
+      />
+      {fieldErrors.phone && (
+        <p class="text-[0.75rem] text-red-500 font-bold mt-2 ps-1">{fieldErrors.phone[0]}</p>
+      )}
+    </div>
   </div>
 
-  <!-- Phone -->
-  <div>
-    <label for="f-phone" class="form-label">
-      {content.formPhoneLabel} <span class="text-red-400">*</span>
-    </label>
-    <input
-      id="f-phone" type="tel" name="phone"
-      required autocomplete="tel" inputmode="tel"
-      placeholder={content.formPhonePlaceholder}
-      dir="ltr"
-      class:list={["form-input", fieldErrors.phone && "error"]}
-    />
-    {fieldErrors.phone && (
-      <p class="text-[0.75rem] text-red-500 font-bold mt-2 ps-1">{fieldErrors.phone[0]}</p>
-    )}
+  {showEmail && (
+    <div>
+      <label for="f-email" class="sr-only">{content.formEmailLabel}</label>
+      {/* `dir="ltr"` is safe here and wrong on the phone row above: this field
+          is its own row, so aligning it left cannot break a neighbour's layout,
+          and an address typed into an RTL field reads backwards without it. */}
+      <input
+        id="f-email" type="email" name="email"
+        dir="ltr"
+        required={policy.email === "required" || undefined}
+        autocomplete="email" inputmode="email" maxlength="254"
+        placeholder={policy.email === "required"
+          ? `${content.formEmailLabel} *`
+          : content.formEmailPlaceholder}
+        class:list={["form-input", fieldErrors.email && "error"]}
+      />
+      {fieldErrors.email && (
+        <p class="text-[0.75rem] text-red-500 font-bold mt-2 ps-1">{fieldErrors.email[0]}</p>
+      )}
+    </div>
+  )}
+
+  <!-- Wilaya + Commune — paired only from `sm` up. Each opens a searchable list
+       whose panel is as wide as its trigger, and half a phone is not enough for
+       a wilaya name beside its code and the selected-check: the longer names
+       wrapped onto a second line. Name and phone above stay paired on phones
+       because their answers are short. -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+    <div>
+      <Select
+        id="f-wilaya"
+        name="wilayaId"
+        label={content.formWilayaLabel}
+        hideLabel={true}
+        placeholder={`${content.formWilayaLabel} *`}
+        searchPlaceholder={content.searchLabel}
+        noResultsText={content.noResultsLabel}
+        required={true}
+        requiredMessage={content.formRequiredField}
+        error={fieldErrors.wilayaId?.[0]}
+        options={wilayaOptions}
+      />
+      {fieldErrors.wilayaId && (
+        <p class="text-[0.75rem] text-red-500 font-bold mt-2 ps-1">{fieldErrors.wilayaId[0]}</p>
+      )}
+    </div>
+
+    <div>
+      <Select
+        id="f-commune"
+        name="communeId"
+        label={content.formCommuneLabel}
+        hideLabel={true}
+        placeholder={`${content.formCommuneLabel} *`}
+        searchPlaceholder={content.searchLabel}
+        noResultsText={content.noResultsLabel}
+        required={true}
+        requiredMessage={content.formRequiredField}
+        error={fieldErrors.communeId?.[0]}
+        options={[]}
+        dynamic={true}
+      />
+      {fieldErrors.communeId && (
+        <p class="text-[0.75rem] text-red-500 font-bold mt-2 ps-1">{fieldErrors.communeId[0]}</p>
+      )}
+    </div>
   </div>
 
-  <!-- Wilaya - ALWAYS SHOWN -->
-  <div class="mb-1">
-    <Select
-      id="f-wilaya"
-      name="wilayaId"
-      label={content.formWilayaLabel}
-      placeholder={content.formWilayaPlaceholder}
-      searchPlaceholder={content.searchLabel}
-      noResultsText={content.noResultsLabel}
-      required={true}
-      error={fieldErrors.wilayaId?.[0]}
-      options={WILAYAS.map(w => ({
-        value: w.id,
-        label: `${w.id.toString().padStart(2, "0")} — ${isRTL ? w.nameAr : w.name}`
-      }))}
-    />
-    {fieldErrors.wilayaId && (
-      <p class="text-[0.75rem] text-red-500 font-bold mt-2 ps-1">{fieldErrors.wilayaId[0]}</p>
-    )}
-  </div>
-
-  <!-- Commune - ALWAYS SHOWN -->
-  <div class="mb-1">
-    <Select
-      id="f-commune"
-      name="communeId"
-      label={content.formCommuneLabel}
-      placeholder={content.formCommuneDisabled}
-      searchPlaceholder={content.searchLabel}
-      noResultsText={content.noResultsLabel}
-      required={true}
-      error={fieldErrors.communeId?.[0]}
-      options={[]}
-      dynamic={true}
-    />
-    {fieldErrors.communeId && (
-      <p class="text-[0.75rem] text-red-500 font-bold mt-2 ps-1">{fieldErrors.communeId[0]}</p>
-    )}
-  </div>
-
-  <!-- Delivery type -->
+  <!-- Delivery type — the one group that keeps a visible label, because the two
+       options are a choice the shopper has to notice, not a field to fill. -->
   <div>
     <fieldset>
       <legend class="form-label">{content.formDeliveryLabel}</legend>
-      <div class="grid grid-cols-2 gap-3" id="delivery-type-group">
-        {[
-          { value: "home",      icon: "heroicons:home", label: content.formHomeDelivery },
-          { value: "stop_desk", icon: "heroicons:cube", label: content.formStopDesk },
-        ].map(({ value, icon, label }, i) => (
-          <label class="delivery-radio-label relative cursor-pointer group">
+      <div
+        class:list={["grid gap-3", singleDelivery ? "grid-cols-1" : "grid-cols-2"]}
+        id="delivery-type-group"
+      >
+        {deliveryChoices.map(({ value, icon, label }, i) => (
+          <label class:list={[
+            "delivery-radio-label relative group",
+            singleDelivery ? "cursor-default" : "cursor-pointer",
+          ]}>
             <input
               type="radio" name="deliveryType" value={value}
               checked={i === 0} class="sr-only delivery-radio-input"
             />
             <div class:list={[
-              "h-14 rounded-2xl border-2 flex items-center justify-center gap-2.5 font-black text-[0.875rem] transition-all select-none active:scale-95",
+              "h-14 rounded-2xl border-2 flex items-center justify-center gap-2.5 font-black text-[0.875rem] transition-all select-none",
+              !singleDelivery && "active:scale-95",
               i === 0
                 ? "border-[var(--clr-primary)] text-[var(--clr-primary)] bg-[var(--clr-primary)]/5 shadow-sm"
                 : "border-[var(--clr-border)] text-[var(--clr-text-2)] bg-[var(--clr-surface-alt)]"
@@ -120,8 +204,44 @@ const { content, fieldErrors, isRTL } = Astro.props;
     </fieldset>
   </div>
 
-  <!-- Address + Notes removed by merchant choice: the store takes orders
-       with name/phone/wilaya/commune only (address collected by phone).
-       Server + action validation keep both optional, and product.ts guards
-       the missing address container with a null check. -->
+  <!-- Address - CONDITIONAL: Only shown for home delivery, and only when not hidden by policy.
+       When hidden, merchants take the address by phone after the order lands. -->
+  {showAddress && (
+    <div id="address-field-container">
+      <label for="f-address" class="sr-only">{content.formAddressLabel}</label>
+      <input
+        id="f-address" type="text" name="address"
+        autocomplete="street-address"
+        required={addressRequired || undefined}
+        data-address-required={addressRequired ? "true" : undefined}
+        placeholder={addressRequired
+          ? `${content.formAddressLabel} *`
+          : content.formAddressPlaceholder}
+        class:list={["form-input", fieldErrors.address && "error"]}
+      />
+      {fieldErrors.address && (
+        <p class="text-[0.75rem] text-red-500 font-bold mt-2 ps-1">{fieldErrors.address[0]}</p>
+      )}
+    </div>
+  )}
+
+  {showNotes && (
+    <div>
+      <label for="f-notes" class="sr-only">{content.formNotesLabel}</label>
+      <textarea
+        id="f-notes" name="notes" rows="2"
+        placeholder={content.formNotesPlaceholder}
+        class="form-input"
+      ></textarea>
+    </div>
+  )}
+
+  {/* The merchant's own questions, in the order they arranged them. Answers are
+      gathered into one hidden JSON input at submit — see checkout.ts/product.ts. */}
+  {policy.customFields.map((field) => (
+    <CustomFieldRow field={field} content={content} />
+  ))}
+  {policy.customFields.length > 0 && (
+    <input type="hidden" name="customFieldResponses" id="custom-field-responses-input" value="[]" />
+  )}
 </div>

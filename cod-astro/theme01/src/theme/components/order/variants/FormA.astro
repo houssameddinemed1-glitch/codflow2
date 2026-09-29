@@ -20,7 +20,7 @@
 //
 // HOW TO ADD FORM B (and later C, D…): see ../OrderFormVariant.astro.
 import { actions } from "astro:actions";
-import type { Product, ProductVariant, Offer } from "@/core/api/types";
+import type { Product, ProductVariant, Offer, CheckoutFormPolicy } from "@/core/api/types";
 import type { StoreFrontContent } from "@/theme/config/content";
 import { Icon } from "astro-icon/components";
 import Select from "@/theme/components/ui/Select.astro";
@@ -48,6 +48,9 @@ interface Props {
   turnstileSiteKey?: string | null;
   /** Landing page attribution — rides the form like fbc/fbp (best-effort). */
   landingPageSlug?: string | null;
+  /** Merchant order-form configuration. Accepted for prop compatibility with
+   * OrderForm; a future pass can hide/show this variant's rows from it. */
+  formPolicy?: CheckoutFormPolicy;
 }
 
 const { product, content, fieldErrors, serverError, basePrice, defaultVariant, cur, isRTL, offers, defaultVariantId, isOutOfStock = false, otpEnabled = false, turnstileEnabled = false, turnstileSiteKey = null, landingPageSlug = null } = Astro.props;

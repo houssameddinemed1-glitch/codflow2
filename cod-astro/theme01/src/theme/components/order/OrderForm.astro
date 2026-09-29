@@ -1,6 +1,11 @@
 ---
 import { actions } from "astro:actions";
-import type { Product, ProductVariant, Offer } from "@/core/api/types";
+import type {
+  Product,
+  ProductVariant,
+  Offer,
+  CheckoutFormPolicy,
+} from "@/core/api/types";
 import type { StoreFrontContent } from "@/theme/config/content";
 import { Icon } from "astro-icon/components";
 
@@ -28,9 +33,15 @@ interface Props {
   turnstileSiteKey?: string | null;
   /** Landing page attribution — rides the form like fbc/fbp (best-effort). */
   landingPageSlug?: string | null;
+  /**
+   * The merchant's order-form configuration (config.checkoutForm). Passed
+   * straight through to CustomerFields, which defaults it to today's form when
+   * the server is older than the feature.
+   */
+  formPolicy?: CheckoutFormPolicy;
 }
 
-const { product, content, fieldErrors, serverError, basePrice, defaultVariant, cur, isRTL, offers, defaultVariantId, isOutOfStock = false, otpEnabled = false, turnstileEnabled = false, turnstileSiteKey = null, landingPageSlug = null } = Astro.props;
+const { product, content, fieldErrors, serverError, basePrice, defaultVariant, cur, isRTL, offers, defaultVariantId, isOutOfStock = false, otpEnabled = false, turnstileEnabled = false, turnstileSiteKey = null, landingPageSlug = null, formPolicy } = Astro.props;
 
 const comparePrice = defaultVariant?.compareAtPrice ?? product.compareAtPrice ?? null;
 
@@ -118,6 +129,7 @@ function fmt(n: number) {
       content={content}
       fieldErrors={fieldErrors}
       isRTL={isRTL}
+      formPolicy={formPolicy}
     />
 
     {otpEnabled && <OtpStep content={content} isRTL={isRTL} />}

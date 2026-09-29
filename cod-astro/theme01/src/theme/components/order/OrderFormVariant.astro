@@ -13,7 +13,7 @@
 //   2. Add `variant === "form_b" ? FormB :` below.
 //   3. Add "form_b" to FORM_VARIANTS in cod-shared/queries/form-config.ts and
 //      to the dashboard VARIANTS list in FormSettings.tsx (+ locale keys).
-import type { Product, ProductVariant, Offer } from "@/core/api/types";
+import type { Product, ProductVariant, Offer, CheckoutFormPolicy } from "@/core/api/types";
 import type { StoreFrontContent } from "@/theme/config/content";
 import OrderForm from "./OrderForm.astro";
 import FormA from "./variants/FormA.astro";
@@ -37,10 +37,12 @@ interface Props {
   landingPageSlug?: string | null;
   /** Active variation key from store config (formVariant). Null/unknown → Default. */
   variant?: string | null;
+  /** Merchant order-form configuration — forwarded to the active form. */
+  formPolicy?: CheckoutFormPolicy;
 }
 
-const { variant, ...formProps } = Astro.props;
+const { variant, formPolicy, ...formProps } = Astro.props;
 const ActiveForm = variant === "form_a" ? FormA : OrderForm;
 ---
 
-<ActiveForm {...formProps} />
+<ActiveForm {...formProps} formPolicy={formPolicy} />

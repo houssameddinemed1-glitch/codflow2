@@ -51,6 +51,22 @@ export const server = {
       address: z.string().max(300).optional(),
       deliveryType: z.enum(["home", "stop_desk"]).default("home"),
       notes: z.string().max(500).optional(),
+      // Shopper email + custom answers — transport only. The merchant's
+      // Checkout Form Policy decides whether they are asked for; the server
+      // enforces and normalises them.
+      email: z.preprocess(
+        (v) => (v === "" || v == null ? undefined : v),
+        z.string().max(254).optional()
+      ),
+      customFieldResponses: z.preprocess(
+        (v) => {
+          if (!v) return undefined;
+          if (Array.isArray(v)) return v.length === 0 ? undefined : v;
+          if (typeof v !== "string" || v === "[]") return undefined;
+          return v.length > 4000 ? undefined : v;
+        },
+        z.union([z.string(), z.array(z.unknown())]).optional()
+      ),
       fbc: z.preprocess(
         (v) => (v === "" || v == null ? undefined : v),
         z.string().optional()
@@ -126,6 +142,8 @@ export const server = {
         quantity: input.quantity,
         pricePerUnit: input.pricePerUnit,
         notes: input.notes,
+        email: input.email,
+        customFieldResponses: input.customFieldResponses,
         offerId: input.offerId,
         variantSelections: input.variantSelections,
         fbc: input.fbc,

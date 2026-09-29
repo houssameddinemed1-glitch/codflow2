@@ -42,6 +42,7 @@ export const DEFAULT_CONFIG: StoreConfig = {
   tiktokPixelId: null,
   tiktokConversionEvent: null,
   formVariant: null,
+  whatsapp: null,
 };
 
 export interface StoreContext {
