@@ -116,6 +116,9 @@ export {
   LandingPageImageSchema,
   LandingPageSchema,
   LandingPageListItemSchema,
+  LandingPageTrackingSchema,
+  LandingPageTrackingActivitySchema,
+  LandingPageTrackingStateSchema,
 } from "./schemas/landing-pages";
 
 // ─── Store & Storefront ───────────────────────────────────────────────────────
@@ -169,6 +172,7 @@ export {
   
   // Abandoned orders
   AbandonedOrderStatusEnum,
+  AbandonedOrderItemSchema,
   AbandonedOrderSchema,
   AbandonedOrderStatsSchema,
   

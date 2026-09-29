@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { getDb } from "@/db";
-import { orders, communes, orderProducts, stores, capiEventLog } from "@/db/schema";
+import { orders, communes, orderProducts, stores, capiEventLog, landingPages } from "@/db/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { getPixelConfig } from "../../../cod-shared/queries/pixel-config";
 import { sendCapiEvent, type CapiResult } from "@/lib/capi";
@@ -8,6 +8,7 @@ import {
   resolveCapiDispatch,
   resolveConversionForStage,
 } from "./capi-helpers";
+import { conversionSourceUrl } from "./conversion-model";
 import { logCapiEvent } from "@/lib/capi-log";
 
 const SEVEN_DAYS_SECONDS = 7 * 24 * 3600;
@@ -59,6 +60,7 @@ export async function runCapiEvent(raw: unknown): Promise<CapiRunResult> {
       customerName: orders.customerName,
       phone: orders.phone,
       customerEmail: orders.customerEmail,
+      landingPageId: orders.landingPageId,
       wilayaId: orders.wilayaId,
       communeId: orders.communeId,
       city: orders.city,
@@ -172,7 +174,19 @@ export async function runCapiEvent(raw: unknown): Promise<CapiRunResult> {
   }
 
   const finalEventSourceUrl =
-    eventSourceUrl ?? (storeRow.domain ? `https://${storeRow.domain}/thank-you` : undefined);
+    eventSourceUrl ??
+    conversionSourceUrl(
+      storeRow.domain,
+      order.landingPageId
+        ? (
+            await db
+              .select({ slug: landingPages.slug })
+              .from(landingPages)
+              .where(eq(landingPages.id, order.landingPageId))
+              .then((rows) => rows[0] ?? null)
+          )?.slug ?? null
+        : null,
+    );
 
   const { firstName, lastName } = splitName(order.customerName);
   let capiResult: CapiResult;

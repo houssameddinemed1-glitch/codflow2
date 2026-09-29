@@ -13,6 +13,7 @@ import { getTurnstileConfigRaw, upsertTurnstileConfig } from "../../../../cod-sh
 import { getEmailConfigRaw, upsertEmailConfig } from "../../../../cod-shared/queries/email-config";
 import { createDzverifyClient, DzverifyError, DZVERIFY_ERRORS } from "@/endpoints/store-otp/dzverify";
 import { createSendiliClient, SendiliError, SENDILI_ERRORS } from "../../../../cod-shared/lib/sendili";
+import { maskApiKey } from "@/lib/mask";
 import { z } from "zod";
 
 export async function getMyStore(c: Context<AppContext>) {
@@ -51,6 +52,7 @@ const pixelConfigSchema = z.object({
   conversionEvent: z.enum(["Purchase", "Purchase_Confirmed", "Purchase_Delivered", "Lead"]),
   testMode: z.boolean().optional(),
   enabled: z.boolean().optional(),
+  perPageTrackingEnabled: z.boolean().optional(),
 });
 
 /** Safe projection — the access token never leaves the API, only a masked hint. */
@@ -65,6 +67,7 @@ function pixelConfigResponse(row: NonNullable<Awaited<ReturnType<typeof queryPix
     conversionEvent: row.conversionEvent,
     testMode: row.testMode,
     enabled: row.enabled,
+    perPageTrackingEnabled: row.perPageTrackingEnabled,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -194,11 +197,7 @@ const otpConfigSchema = z.object({
   enabled: z.boolean().optional(),
 });
 
-/** Response shape: the safe config plus a masked key hint for the UI. */
-function maskApiKey(key: string): string {
-  if (key.length <= 4) return "••••";
-  return `••••${key.slice(-4)}`;
-}
+/** Response shape: the safe config plus a masked key hint for the UI. maskApiKey lives in @/lib/mask. */
 
 export async function getOtpConfig(c: Context<AppContext>) {
   const db = getDb(c.env.DB);

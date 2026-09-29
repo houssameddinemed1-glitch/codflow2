@@ -35,7 +35,7 @@ const updateStoreBodySchema = z.object({
   logoUrl: z.string().url().nullable().optional(),
   domain: z
     .string()
-    .regex(/^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/i, "Domain must be a hostname like store.example.com")
+    .regex(/^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/i, "Domain must be a valid hostname like example.com or store.example.com")
     .max(200)
     .nullable()
     .optional(),
@@ -44,7 +44,7 @@ const updateStoreBodySchema = z.object({
   bgColor: hexColor.optional(),
   fontFamily: z.string().min(1).max(200).optional(),
   fontUrl: z.string().url().nullable().optional(),
-  lang: z.enum(["ar", "en"]).optional(),
+  lang: z.enum(["ar", "en", "fr"]).optional(),
   currencySymbol: z.string().min(1).max(10).optional(),
   contentJson: z.string().nullable().optional(),
   metaTitle: z.string().max(200).nullable().optional(),
@@ -52,6 +52,9 @@ const updateStoreBodySchema = z.object({
   ogImage: z.string().url().nullable().optional(),
   announcementBar: z.string().max(500).nullable().optional(),
   reviewsEnabled: z.boolean().optional(),
+  cartEnabled: z.boolean().optional(),
+  freeShippingThreshold: z.number().int().min(1).max(10_000_000).nullable().optional(),
+  cartShippingMode: z.enum(["highest", "default_profile"]).optional(),
   status: z.enum(["active", "inactive"]).optional(),
 });
 
@@ -66,6 +69,10 @@ const savePixelBodySchema = z.object({
   conversionEvent: z.enum(["Purchase", "Purchase_Confirmed", "Purchase_Delivered", "Lead"]),
   testMode: z.boolean().optional(),
   enabled: z.boolean().optional(),
+  perPageTrackingEnabled: z.boolean().optional().openapi({
+    description:
+      "Master switch for per-landing-page pixels. Omitted keeps the stored value — an unrelated edit must not return every landing page to the store pixel.",
+  }),
 });
 
 // ─── TikTok Pixel + Events API config ───────────────────────────────────────
