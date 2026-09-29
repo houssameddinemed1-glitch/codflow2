@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { AlertCircle, Save } from "lucide-react";
 import { canScope, RequireAuth, useIdentity } from "@/features/auth/components/RequireAuth";
 import { DashboardChrome } from "@/components/layout/chrome";
@@ -121,7 +121,7 @@ function CustomerGroupForm({ groupId }: { groupId?: string }) {
 }
 
 function Gated({ groupId }: { groupId?: string }) {
-  return <DashboardChrome currentPath={groupId ? `/customer-groups/${groupId}/edit` : "/customer-groups/new"}><CustomerGroupForm groupId={groupId} /></DashboardChrome>;
+  return <DashboardChrome currentPath={groupId ? `/customer-groups/${groupId}/edit` : "/customer-groups/new"} wide><CustomerGroupForm groupId={groupId} /></DashboardChrome>;
 }
 
 export default function CustomerGroupFormPageApp({ groupId }: { groupId?: string }) { return <RequireAuth><Gated groupId={groupId} /></RequireAuth>; }

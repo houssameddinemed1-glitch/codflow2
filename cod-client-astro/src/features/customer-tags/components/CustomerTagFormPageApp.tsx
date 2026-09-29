@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { AlertCircle, Save } from "lucide-react";
 import { canScope, RequireAuth, useIdentity } from "@/features/auth/components/RequireAuth";
 import { DashboardChrome } from "@/components/layout/chrome";
@@ -112,7 +112,7 @@ function CustomerTagForm({ tagId }: { tagId?: string }) {
 }
 
 function Gated({ tagId }: { tagId?: string }) {
-  return <DashboardChrome currentPath={tagId ? `/customer-tags/${tagId}/edit` : "/customer-tags/new"}><CustomerTagForm tagId={tagId} /></DashboardChrome>;
+  return <DashboardChrome currentPath={tagId ? `/customer-tags/${tagId}/edit` : "/customer-tags/new"} wide><CustomerTagForm tagId={tagId} /></DashboardChrome>;
 }
 
 export default function CustomerTagFormPageApp({ tagId }: { tagId?: string }) { return <RequireAuth><Gated tagId={tagId} /></RequireAuth>; }

@@ -1,9 +1,11 @@
 import {
   Building2,
+  ClipboardList,
   FolderOpen,
   Gift,
   Layers,
   Megaphone,
+  MessageCircle,
   LayoutDashboard,
   Package,
   PackageSearch,
@@ -221,6 +223,20 @@ export function useNavSections(): NavSection[] {
           label: tN("sidebar.mcp"),
           icon: Sparkles,
           scope: "mcp:view",
+        },
+        {
+          kind: "leaf",
+          href: "/checkout-form",
+          label: tN("sidebar.checkout_form"),
+          icon: ClipboardList,
+          scope: "checkout_form:read",
+        },
+        {
+          kind: "leaf",
+          href: "/whatsapp",
+          label: tN("sidebar.whatsapp"),
+          icon: MessageCircle,
+          scope: "whatsapp_widget:read",
         },
         {
           kind: "leaf",

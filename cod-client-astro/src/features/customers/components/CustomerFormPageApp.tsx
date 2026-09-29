@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { AlertCircle, Phone, Save, UserRound } from "lucide-react";
 import { canScope, RequireAuth, useIdentity } from "@/features/auth/components/RequireAuth";
 import { DashboardChrome } from "@/components/layout/chrome";
@@ -95,7 +95,7 @@ function CustomerForm({ customerId }: { customerId?: string }) {
 }
 
 function Gated({ customerId }: { customerId?: string }) {
-  return <DashboardChrome currentPath={customerId ? `/customers/${customerId}/edit` : "/customers/new"}><CustomerForm customerId={customerId} /></DashboardChrome>;
+  return <DashboardChrome currentPath={customerId ? `/customers/${customerId}/edit` : "/customers/new"} wide><CustomerForm customerId={customerId} /></DashboardChrome>;
 }
 
 export default function CustomerFormPageApp({ customerId }: { customerId?: string }) { return <RequireAuth><Gated customerId={customerId} /></RequireAuth>; }

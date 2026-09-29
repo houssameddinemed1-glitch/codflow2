@@ -1,11 +1,11 @@
-import { RequireAuth } from "@/features/auth/components/RequireAuth";
+﻿import { RequireAuth } from "@/features/auth/components/RequireAuth";
 import { DashboardChrome } from "@/components/layout/chrome";
 import { NewOrderForm } from "@/features/orders/components/NewOrderForm";
 
 export default function NewOrderPageApp() {
   return (
     <RequireAuth>
-      <DashboardChrome currentPath="/orders/new">
+      <DashboardChrome currentPath="/orders/new" wide>
         <NewOrderForm />
       </DashboardChrome>
     </RequireAuth>

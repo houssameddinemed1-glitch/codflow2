@@ -27,7 +27,9 @@
     "landing_pages": "صفحات الهبوط",
     "stock_management": "إدارة المخزون",
     "api_reference": "مرجع API",
-    "mcp": "وكلاء الذكاء الاصطناعي"
+    "mcp": "وكلاء الذكاء الاصطناعي",
+    "checkout_form": "نموذج الطلب",
+    "whatsapp": "واتساب"
   },
   "navbar": {
     "search_placeholder": "البحث عن طلبات، عملاء...",

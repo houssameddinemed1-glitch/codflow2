@@ -1,4 +1,4 @@
-import { Plus } from "lucide-react";
+﻿import { Plus } from "lucide-react";
 import {
   canScope,
   RequireAuth,
@@ -14,7 +14,7 @@ function Gated() {
   const t = useT("customer-groups");
   const identity = useIdentity();
   return (
-    <DashboardChrome currentPath="/customer-groups">
+    <DashboardChrome currentPath="/customer-groups" wide>
       <PageHeader
         title={t("page_title")}
         actions={

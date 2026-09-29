@@ -44,6 +44,7 @@ export function OrderEditDialog({
 
   const [customerName, setCustomerName] = useState(order.customerName);
   const [phone, setPhone] = useState(order.phone);
+  const [customerEmail, setCustomerEmail] = useState(order.customerEmail ?? "");
   const [wilayaId, setWilayaId] = useState(
     order.wilayaId ? String(order.wilayaId) : "",
   );
@@ -181,6 +182,8 @@ export function OrderEditDialog({
       await updateOrder(order.id, {
         customerName: customerName.trim(),
         phone: phone.trim(),
+        // Empty box clears the email (null); a value is canonicalised server-side.
+        customerEmail: customerEmail.trim() || null,
         wilayaId: Number(wilayaId),
         communeId,
         address: address.trim() || null,
@@ -235,6 +238,18 @@ export function OrderEditDialog({
               value={phone}
               onChange={(e) => setPhone(e.currentTarget.value)}
               placeholder={t("form.phone_placeholder")}
+              dir="ltr"
+            />
+          </Field>
+          <Field label={t("form.email_label")} error={errors.customerEmail}>
+            <Input
+              type="email"
+              value={customerEmail}
+              onChange={(e) => setCustomerEmail(e.currentTarget.value)}
+              placeholder={t("form.email_placeholder")}
+              inputMode="email"
+              autoComplete="email"
+              maxLength={254}
               dir="ltr"
             />
           </Field>

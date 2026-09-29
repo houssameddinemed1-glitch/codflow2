@@ -46,6 +46,7 @@ import type {
   OrderStatus,
 } from "@/features/orders/types";
 import { OrderCustomerCard } from "@/features/orders/components/OrderCustomerCard";
+import { OrderCustomAnswersCard } from "@/features/orders/components/OrderCustomAnswersCard";
 import { OrderProductsCard } from "@/features/orders/components/OrderProductsCard";
 import { OrderDeliveryCard } from "@/features/orders/components/OrderDeliveryCard";
 import { OrderInternalNoteCard } from "@/features/orders/components/OrderInternalNote";
@@ -349,6 +350,7 @@ export function OrderDetail({ orderId }: { orderId: string }) {
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-5">
           <OrderCustomerCard order={order} />
+          <OrderCustomAnswersCard customFieldsJson={order.customFieldsJson} />
           <OrderProductsCard order={order} locale={locale} />
           <OrderDeliveryCard order={order} company={company} />
           <OrderInternalNoteCard

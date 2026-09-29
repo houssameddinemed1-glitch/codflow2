@@ -1,10 +1,10 @@
-import { RequireAuth } from "@/features/auth/components/RequireAuth";
+﻿import { RequireAuth } from "@/features/auth/components/RequireAuth";
 import { DashboardChrome } from "@/components/layout/chrome";
 import { CustomerTagDetail } from "@/features/customer-tags/components/CustomerTagDetail";
 
 function Gated({ tagId }: { tagId: string }) {
   return (
-    <DashboardChrome currentPath={`/customer-tags/${tagId}`}>
+    <DashboardChrome currentPath={`/customer-tags/${tagId}`} wide>
       <CustomerTagDetail tagId={tagId} />
     </DashboardChrome>
   );

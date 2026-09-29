@@ -1,4 +1,4 @@
-import { canScope, RequireAuth, useIdentity } from "@/features/auth/components/RequireAuth";
+﻿import { canScope, RequireAuth, useIdentity } from "@/features/auth/components/RequireAuth";
 import { DashboardChrome } from "@/components/layout/chrome";
 import { OrdersList } from "@/features/orders/components/OrdersList";
 import { useT } from "@/i18n/react";
@@ -11,7 +11,7 @@ function Gated() {
   const identity = useIdentity();
   if (!canScope(identity, "orders:read")) {
     return (
-      <DashboardChrome currentPath="/orders">
+      <DashboardChrome currentPath="/orders" wide>
         <p className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
           {auth("no_access")}
         </p>
@@ -19,7 +19,7 @@ function Gated() {
     );
   }
   return (
-    <DashboardChrome currentPath="/orders">
+    <DashboardChrome currentPath="/orders" wide>
       <PageHeader
         title={t("page_title")}
         actions={canScope(identity, "orders:create") && (

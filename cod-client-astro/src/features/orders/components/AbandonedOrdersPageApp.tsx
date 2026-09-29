@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import {
   AlertCircle,
   CheckCircle2,
@@ -177,7 +177,7 @@ function AbandonedDesktopRow({
           <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
             <MapPin size={12} className="shrink-0" />
             {row.wilayaName}
-            {row.communeName ? ` · ${row.communeName}` : ""}
+            {row.communeName ? ` Â· ${row.communeName}` : ""}
           </p>
         )}
       </TableCell>
@@ -201,7 +201,7 @@ function AbandonedDesktopRow({
             <RecoveredLink row={row} />
           </div>
         ) : (
-          <span className="text-xs text-muted-foreground">—</span>
+          <span className="text-xs text-muted-foreground">â€”</span>
         )}
       </TableCell>
       <TableCell className="text-end font-bold tabular-nums text-foreground">
@@ -320,7 +320,7 @@ function AbandonedMobileCard({
               )}
             </>
           ) : (
-            <span className="text-xs text-muted-foreground">—</span>
+            <span className="text-xs text-muted-foreground">â€”</span>
           )}
           <RecoveredLink row={row} />
         </div>
@@ -332,7 +332,7 @@ function AbandonedMobileCard({
       <div className="mt-2 flex items-center justify-between gap-3 text-xs text-muted-foreground">
         <span className="inline-flex min-w-0 items-center gap-1 truncate">
           <MapPin size={13} className="shrink-0" />
-          {row.wilayaName ?? row.communeName ?? "—"}
+          {row.wilayaName ?? row.communeName ?? "â€”"}
         </span>
         <span className="shrink-0">{formatDate(row.createdAt, locale)}</span>
       </div>
@@ -702,7 +702,7 @@ function AbandonedOrdersView() {
 export default function AbandonedOrdersPageApp() {
   return (
     <RequireAuth>
-      <DashboardChrome currentPath="/orders/abandoned">
+      <DashboardChrome currentPath="/orders/abandoned" wide>
         <AbandonedOrdersView />
       </DashboardChrome>
     </RequireAuth>
