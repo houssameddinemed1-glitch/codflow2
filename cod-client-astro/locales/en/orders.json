@@ -322,5 +322,56 @@
     },
     "recovered_order": "Order {number}",
     "convert_to_order": "Convert to order"
+  },
+  "tracking": {
+    "title": "Order Tracking",
+    "subtitle": "Every parcel handed to a delivery company — the latest carrier update per order. Green rows are delivered, red are returned, orange are still on the way.",
+    "search_placeholder": "Search by order #, name, phone, or tracking number...",
+    "count_label": "{count} parcels",
+    "load_error": "Could not load tracking parcels",
+    "refresh_all": "Refresh all",
+    "refreshing": "Refreshing...",
+    "stats": {
+      "in_transit": "On the way",
+      "delivered": "Delivered",
+      "returned": "Returned",
+      "total": "Shipped total"
+    },
+    "filter": {
+      "status": "Status",
+      "company": "Company",
+      "all_statuses": "All statuses",
+      "all_companies": "All companies"
+    },
+    "status_groups": {
+      "all": "All",
+      "in_transit": "On the way",
+      "delivered": "Delivered",
+      "returned": "Returned"
+    },
+    "table": {
+      "order": "Order",
+      "customer": "Customer",
+      "phone": "Phone",
+      "wilaya": "Wilaya",
+      "company": "Company",
+      "tracking_number": "Tracking #",
+      "carrier_update": "Latest carrier update",
+      "status": "Status",
+      "updated": "Updated",
+      "actions": "Actions"
+    },
+    "row": {
+      "view_details": "View details",
+      "refresh_tracking": "Refresh from carrier",
+      "tracking_refreshed": "Latest update fetched",
+      "tracking_failed": "Could not fetch tracking",
+      "no_tracking_events": "No carrier events yet",
+      "last_event": "Last event"
+    },
+    "empty": {
+      "title": "No shipped parcels",
+      "description": "Orders dispatched through a delivery company will appear here with live carrier updates."
+    }
   }
 }

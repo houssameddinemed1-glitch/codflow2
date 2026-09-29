@@ -17,10 +17,13 @@ import { ERROR_CODES } from "../../../../cod-shared/errors/codes";
 import deliveryCompaniesRouter from "./routes";
 import * as queries from "./queries";
 import * as registry from "./providers/registry";
+import { NoestProvider } from "./providers/noest/adapter";
+import { reconcileNoestOrders } from "./providers/noest/reconcile";
 
 vi.mock("@/db", () => ({ getDb: vi.fn(() => ({})) }));
 vi.mock("./queries");
 vi.mock("./providers/registry");
+vi.mock("./providers/noest/reconcile", () => ({ reconcileNoestOrders: vi.fn() }));
 
 function companyRow(overrides: Record<string, any> = {}) {
   return {
@@ -84,9 +87,9 @@ describe("POST /api/delivery-companies/:id/reconcile-orders", () => {
     expect(body.code).toBe(ERROR_CODES.MISSING_API_CREDENTIALS);
   });
 
-  it("returns 422 for a non-EcoTrack provider (webhook-driven)", async () => {
+  it("returns 422 for a webhook-driven provider (Yalidine, ZR Express)", async () => {
     vi.mocked(queries.getDeliveryCompanyRaw).mockResolvedValue(
-      companyRow({ code: "noest" }) as any
+      companyRow({ code: "yalidine" }) as any
     );
     vi.mocked(registry.isEcotrackCompany).mockReturnValue(false);
 
@@ -97,7 +100,38 @@ describe("POST /api/delivery-companies/:id/reconcile-orders", () => {
     expect(res.status).toBe(422);
     const body: any = await res.json();
     expect(body.code).toBe(ERROR_CODES.OPERATION_NOT_SUPPORTED);
-    expect(body.error).toMatch(/EcoTrack-only/i);
+    expect(body.error).toMatch(/without status webhooks/i);
+  });
+
+  it("reconciles NOEST orders through the batched pull", async () => {
+    vi.mocked(queries.getDeliveryCompanyRaw).mockResolvedValue(
+      companyRow({ code: "noest", apiToken: "tok", apiUserGuid: "guid" }) as any
+    );
+    vi.mocked(registry.isEcotrackCompany).mockReturnValue(false);
+    vi.mocked(registry.getProvider).mockReturnValue(new NoestProvider("tok", "guid"));
+    vi.mocked(reconcileNoestOrders).mockResolvedValue({
+      pagesFetched: 1,
+      ordersSeen: 4,
+      updated: 2,
+      unchanged: 1,
+      notFound: 1,
+      skippedUnmapped: 0,
+      unmappedSamples: [],
+      morePagesRemain: false,
+    });
+
+    const res = await app.request("/api/delivery-companies/comp_1/reconcile-orders", {
+      method: "POST",
+    });
+
+    expect(res.status).toBe(200);
+    const body: any = await res.json();
+    expect(body.data).toMatchObject({ ordersSeen: 4, updated: 2 });
+    expect(vi.mocked(reconcileNoestOrders)).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.any(NoestProvider),
+      { id: "comp_1", code: "noest" },
+    );
   });
 });
 

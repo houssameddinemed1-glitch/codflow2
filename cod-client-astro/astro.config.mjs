@@ -43,9 +43,15 @@ export default defineConfig({
   adapter: vercel(),
   vite: {
     plugins: [orderDetailFallback, tailwindcss()],
+    ssr: {
+      noExternal: ["drizzle-orm", "@neondatabase/serverless"],
+    },
     resolve: {
       alias: {
         "@": fileURLToPath(new URL("./src", import.meta.url)),
+        "@neondatabase/serverless": fileURLToPath(
+          new URL("./node_modules/@neondatabase/serverless", import.meta.url),
+        ),
       },
     },
   },

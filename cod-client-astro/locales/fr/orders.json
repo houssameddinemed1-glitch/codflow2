@@ -322,5 +322,56 @@
     },
     "recovered_order": "Commande {number}",
     "convert_to_order": "Convertir en commande"
+  },
+  "tracking": {
+    "title": "Suivi des commandes",
+    "subtitle": "Tous les colis confiés à un transporteur — la dernière mise à jour du transporteur par commande. Lignes vertes livrées, rouges retournées, orange en cours de livraison.",
+    "search_placeholder": "Rechercher par n° de commande, nom, téléphone ou n° de suivi...",
+    "count_label": "{count} colis",
+    "load_error": "Impossible de charger les colis suivis",
+    "refresh_all": "Tout actualiser",
+    "refreshing": "Actualisation...",
+    "stats": {
+      "in_transit": "En cours",
+      "delivered": "Livrés",
+      "returned": "Retournés",
+      "total": "Total expédié"
+    },
+    "filter": {
+      "status": "Statut",
+      "company": "Société",
+      "all_statuses": "Tous les statuts",
+      "all_companies": "Toutes les sociétés"
+    },
+    "status_groups": {
+      "all": "Tout",
+      "in_transit": "En livraison",
+      "delivered": "Livrés",
+      "returned": "Retournés"
+    },
+    "table": {
+      "order": "Commande",
+      "customer": "Client",
+      "phone": "Tél.",
+      "wilaya": "Wilaya",
+      "company": "Société",
+      "tracking_number": "N° de suivi",
+      "carrier_update": "Dernière mise à jour transporteur",
+      "status": "Statut",
+      "updated": "Mis à jour",
+      "actions": "Actions"
+    },
+    "row": {
+      "view_details": "Voir le détail",
+      "refresh_tracking": "Actualiser via transporteur",
+      "tracking_refreshed": "Dernière mise à jour récupérée",
+      "tracking_failed": "Suivi introuvable",
+      "no_tracking_events": "Aucun événement transporteur pour le moment",
+      "last_event": "Dernier événement"
+    },
+    "empty": {
+      "title": "Aucun colis expédié",
+      "description": "Les commandes expédiées via une société de livraison apparaîtront ici avec les mises à jour du transporteur."
+    }
   }
 }

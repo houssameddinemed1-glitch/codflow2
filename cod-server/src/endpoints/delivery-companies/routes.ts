@@ -393,13 +393,15 @@ const reconcileOrdersRoute = defineRoute({
   path: "/{id}/reconcile-orders",
   auth: "api-key",
   tags: ["Delivery Companies"],
-  summary: "Reconcile order statuses from the carrier (EcoTrack only)",
+  summary: "Reconcile order statuses from the carrier (EcoTrack + NOEST)",
   description:
-    "Pull-based drift repair for EcoTrack-family carriers (the platform has no webhooks). " +
-    "Pages the carrier's order list (up to 10 pages × 40 orders per run — rate-limit safe), maps carrier statuses to ours, " +
-    "and applies forward-only fixes through the shared webhook rank guard (an order can never move backwards; Delivered/Returned/Cancelled are terminal). " +
+    "Pull-based status sync for carriers without status webhooks (EcoTrack family and NOEST). " +
+    "EcoTrack: pages the carrier's order list (up to 10 pages × 40 orders per run — rate-limit safe). " +
+    "NOEST: pulls tracking histories for up to 100 of our open orders in one batched call (maxPages is ignored). " +
+    "Carrier statuses are mapped to ours and forward-only fixes applied through the shared webhook rank guard " +
+    "(an order can never move backwards; Delivered/Returned/Cancelled are terminal). " +
     "Unmapped carrier statuses are skipped and sampled in the response — never guessed. " +
-    "Non-EcoTrack providers (webhook-driven) answer OPERATION_NOT_SUPPORTED.",
+    "Webhook-driven providers (Yalidine, ZR Express) answer OPERATION_NOT_SUPPORTED.",
   params: idParams,
   query: z.object({
     maxPages: z.coerce.number().int().min(1).max(10).optional().openapi({
@@ -427,7 +429,7 @@ const reconcileOrdersRoute = defineRoute({
       ),
     },
     400: { description: "Company not connected — no API token stored" },
-    422: { description: "Non-EcoTrack provider (webhook-driven — reconciliation not needed)" },
+    422: { description: "Webhook-driven provider (Yalidine, ZR Express — reconciliation not needed)" },
     502: { description: "External API failure (carrier unreachable)" },
   },
   handler: handlers.reconcileCompanyOrders,

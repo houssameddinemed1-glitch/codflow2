@@ -9,6 +9,7 @@ import { assertOtpVerification } from "./otp-gate";
 import { assertTurnstile } from "./turnstile-gate";
 import { getPixelConfig } from "../../../../cod-shared/queries/pixel-config";
 import { getTiktokConfig } from "../../../../cod-shared/queries/tiktok-config";
+import { reconcileAbandonedOrdersOnOrder } from "../../../../cod-shared/queries/abandoned-orders";
 import { resolveConversionForStage, getCapiWorkflowId } from "@/workflows/capi-helpers";
 import { resolveTiktokForStage, getTiktokWorkflowId } from "@/workflows/tiktok-conversion-model";
 import { publishWorkflow } from "@/lib/queue";
@@ -217,6 +218,18 @@ export async function createStoreOrder(c: Context<AppContext>) {
     ipAddress,
     userAgent,
   });
+
+  // Abandoned-checkout reconcile: the shopper just bought, so any open
+  // (pending/abandoned) checkout rows for this phone are stale — the newest
+  // carries this order's attribution, the rest are deleted. Server-side, so
+  // it works even when the thank-you page convert signal never fires
+  // (per-tab session, closed tab, blocked fetch). Best-effort: must never
+  // break or delay the order response.
+  try {
+    await reconcileAbandonedOrdersOnOrder(db, data.phone, order.id, order.orderNumber);
+  } catch (err) {
+    console.error("[store] abandoned reconcile failed:", (err as Error)?.message);
+  }
 
   // Meta CAPI conversion event at checkout — evaluated against merchant's tracking mode.
   // When mode is instant "Purchase", sends Purchase (matching the thank-you Pixel).

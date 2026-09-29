@@ -27,7 +27,11 @@ import {
 import { useLocale, useT } from "@/i18n/react";
 import { getDashboardStats } from "@/features/dashboard/api";
 import { fillStatusStats } from "@/features/dashboard/model";
-import { getTracking, listOrders } from "@/features/orders/api";
+import { listOrders } from "@/features/orders/api";
+import {
+  listDeliveryCompanies,
+  reconcileCompanyOrders,
+} from "@/features/delivery/api";
 import { getOrderSource, OrderSourceIcon } from "@/features/orders/components/OrderSourceIcon";
 import { formatMoney, orderTotal } from "@/features/orders/model";
 import type { OrderListItem, OrderStatus } from "@/features/orders/types";
@@ -113,19 +117,15 @@ function DashboardOverview() {
     if (refreshing) return;
     setRefreshing(true);
     try {
-      const res = await listOrders({ limit: 100, offset: 0 });
-      const toRefresh = res.data.filter(
-        (o) => o.trackingNumber && ["dispatched", "out_for_delivery"].includes(o.status),
-      );
-      if (toRefresh.length === 0) {
-        setRefreshing(false);
-        return;
-      }
-      const results = await Promise.allSettled(toRefresh.map((o) => getTracking(o.id)));
-      const ok = results.filter((r) => r.status === "fulfilled").length;
+      const companies = await listDeliveryCompanies({ limit: 100, offset: 0, active: true });
+      const noest = companies.data.find((c) => c.code === "noest");
+      if (!noest) throw new Error("No connected NOEST company found");
+      const summary = await reconcileCompanyOrders(noest.id);
       await load();
       const { toast } = await import("react-hot-toast");
-      toast.success(`${ok}/${toRefresh.length} shipments refreshed`);
+      const extra =
+        summary.skippedUnmapped > 0 ? ` · ${summary.skippedUnmapped} unknown` : "";
+      toast.success(`${summary.updated} updated · ${summary.ordersSeen} checked${extra}`);
     } catch (cause) {
       const { toast } = await import("react-hot-toast");
       toast.error(cause instanceof Error ? cause.message : String(cause));
@@ -140,13 +140,13 @@ function DashboardOverview() {
       subtitle={t("header.subtitle")}
       actions={
         <div className="flex items-center gap-2">
-          {canScope(identity, "orders:read") && (
+          {canScope(identity, "delivery:dispatch") && (
             <Button
               type="button"
               variant="secondary"
               disabled={refreshing}
               onClick={() => void refreshNoest()}
-              title="Refresh NOEST tracking for all dispatched orders"
+              title="Sync NOEST tracking into order statuses"
             >
               <RefreshCw size={16} className={refreshing ? "animate-spin" : ""} />
               {refreshing ? "..." : "Refresh NOEST"}

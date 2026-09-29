@@ -347,28 +347,45 @@ export class NoestProvider implements DeliveryProvider {
    * Fetch the full tracking history for a shipment.
    * ✅ VERIFIED: Response structure from real API test.
    * Returns chronological events from the carrier.
-   * 
+   *
    * Response is keyed by tracking number:
    * { "TRACKING": { "OrderInfo": {...}, "activity": [...], "deliveryAttempts": [...] } }
    */
   async getTrackingInfo(trackingNumber: string): Promise<TrackingEvent[]> {
+    const bulk = await this.getTrackingInfoBulk([trackingNumber]);
+    const events = bulk[trackingNumber];
+    if (!events) {
+      throw new Error("NOEST: tracking not found");
+    }
+    return events;
+  }
+
+  /**
+   * Fetch tracking histories for many shipments in ONE call.
+   * POST /api/public/get/trackings/info accepts an array of trackings.
+   * Returns a map tracking → chronological events. Trackings unknown to
+   * NOEST are simply absent from the response (never an error).
+   */
+  async getTrackingInfoBulk(trackingNumbers: string[]): Promise<Record<string, TrackingEvent[]>> {
+    if (trackingNumbers.length === 0) return {};
     const res = await this.post<
       { trackings: string[] },
       NoestTrackingInfoResponse
     >("/api/public/get/trackings/info", {
-      trackings: [trackingNumber],
+      trackings: trackingNumbers,
     });
-    
-    const orderData = res[trackingNumber];
-    if (!orderData) {
-      throw new Error("NOEST: tracking not found");
+
+    const out: Record<string, TrackingEvent[]> = {};
+    for (const tracking of trackingNumbers) {
+      const orderData = res[tracking];
+      if (!orderData) continue;
+      const events = orderData.activity ?? [];
+      out[tracking] = events.map((e) => ({
+        activity: e.event_key ?? e.event ?? "",
+        description: e.event,
+        date: e.date,
+      }));
     }
-    
-    const events = orderData.activity ?? [];
-    return events.map((e) => ({
-      activity: e.event_key ?? e.event ?? "",  // Use event_key (machine-readable)
-      description: e.event,  // Human-readable description
-      date: e.date,
-    }));
+    return out;
   }
 }

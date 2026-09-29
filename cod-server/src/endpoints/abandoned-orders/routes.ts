@@ -22,6 +22,7 @@ import {
   getAbandonedOrderStats,
   updateAbandonedOrderStatus,
   deleteAbandonedOrder,
+  sweepPendingToAbandoned,
 } from "../../../../cod-shared/queries/abandoned-orders";
 import {
   AbandonedOrderSchema,
@@ -56,6 +57,16 @@ async function listHandler(c: Context<AppContext>) {
   const db = getDb(c.env.DB);
   const { status, search, limit, offset } = (c.req as any).valid("query");
 
+  // Opportunistic sweep: the Vercel cron only runs daily (Hobby plan), so
+  // pending rows would sit stale all day. Flipping due rows on every
+  // dashboard read keeps the list truthful with zero scheduler dependency.
+  // Best-effort — a sweep failure must never break the read.
+  try {
+    await sweepPendingToAbandoned(db);
+  } catch {
+    // ignore — the list below is still served
+  }
+
   const { rows, total } = await listAbandonedOrders(db, {
     status,
     search,
@@ -68,6 +79,11 @@ async function listHandler(c: Context<AppContext>) {
 
 async function statsHandler(c: Context<AppContext>) {
   const db = getDb(c.env.DB);
+  try {
+    await sweepPendingToAbandoned(db);
+  } catch {
+    // ignore — stats are still served
+  }
   const stats = await getAbandonedOrderStats(db);
   return c.json({ success: true, data: stats }, 200);
 }

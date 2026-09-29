@@ -13,7 +13,12 @@ import * as queries from "./queries";
 import * as validation from "./validation";
 import { getProvider, isEcotrackCompany } from "./providers/registry";
 import { EcotrackProvider } from "./providers/ecotrack/adapter";
-import { reconcileEcotrackOrders, DEFAULT_MAX_PAGES } from "./providers/ecotrack/reconcile";
+import { reconcileEcotrackOrders, DEFAULT_MAX_PAGES } from
+"./providers/ecotrack/reconcile";
+import { NoestProvider } from
+"./providers/noest/adapter";
+import { reconcileNoestOrders } from
+"./providers/noest/reconcile";
 import { NotFoundError, ValidationError, BusinessLogicError, ConflictError, ExternalApiError } from "@/lib/errors/classes";
 import { ERROR_CODES } from "../../../../cod-shared/errors/codes";
 import { syncCarrierGeoNames } from "../../../../cod-shared/queries/carrier-geo";
@@ -323,10 +328,10 @@ export async function testCompanyConnection(c: Context<AppContext>) {
 
 /**
  * POST /delivery-companies/:id/reconcile-orders
- * Pull-based drift repair for EcoTrack-family carriers (the platform has no
- * webhooks). Pages the carrier's order list, maps statuses, and applies
- * forward-only fixes through the shared webhook rank guard. Unmapped carrier
- * statuses are skipped and sampled — never guessed.
+ * Pull-based status sync for carriers without status webhooks (EcoTrack
+ * family and NOEST). Maps carrier statuses and applies forward-only fixes
+ * through the shared webhook rank guard. Unmapped carrier statuses are
+ * skipped and sampled — never guessed.
  */
 export async function reconcileCompanyOrders(c: Context<AppContext>) {
   const db = getDb(c.env.DB);
@@ -343,9 +348,11 @@ export async function reconcileCompanyOrders(c: Context<AppContext>) {
     );
   }
 
-  if (!isEcotrackCompany(company.code)) {
+  const isEcotrack = isEcotrackCompany(company.code);
+  const isNoest = company.code === "noest";
+  if (!isEcotrack && !isNoest) {
     throw new BusinessLogicError(
-      `Reconciliation is EcoTrack-only — ${company.code} pushes status via webhooks`,
+      `Reconciliation is for carriers without status webhooks (EcoTrack, NOEST) — ${company.code} pushes status via webhooks`,
       ERROR_CODES.OPERATION_NOT_SUPPORTED,
       { companyId: id, code: company.code }
     );
@@ -361,20 +368,36 @@ export async function reconcileCompanyOrders(c: Context<AppContext>) {
       { companyId: id, code: company.code }
     );
   }
-  if (!(provider instanceof EcotrackProvider)) {
-    throw new BusinessLogicError(
-      `Provider mismatch for ${company.code}`,
-      ERROR_CODES.PROVIDER_NOT_SUPPORTED,
-      { companyId: id, code: company.code }
-    );
-  }
-
-  const maxPagesParam = c.req.query("maxPages");
-  const maxPages = maxPagesParam
-    ? Math.min(Math.max(1, Number(maxPagesParam) || DEFAULT_MAX_PAGES), DEFAULT_MAX_PAGES)
-    : DEFAULT_MAX_PAGES;
 
   try {
+    if (isNoest) {
+      if (!(provider instanceof NoestProvider)) {
+        throw new BusinessLogicError(
+          `Provider mismatch for ${company.code}`,
+          ERROR_CODES.PROVIDER_NOT_SUPPORTED,
+          { companyId: id, code: company.code }
+        );
+      }
+      const summary = await reconcileNoestOrders(db, provider, { id: company.id, code: company.code });
+      console.info(
+        `[reconcile] company=${id} code=${company.code} seen=${summary.ordersSeen} updated=${summary.updated} unmapped=${summary.skippedUnmapped}`,
+      );
+      return c.json({ success: true, data: summary }, 200);
+    }
+
+    if (!(provider instanceof EcotrackProvider)) {
+      throw new BusinessLogicError(
+        `Provider mismatch for ${company.code}`,
+        ERROR_CODES.PROVIDER_NOT_SUPPORTED,
+        { companyId: id, code: company.code }
+      );
+    }
+
+    const maxPagesParam = c.req.query("maxPages");
+    const maxPages = maxPagesParam
+      ? Math.min(Math.max(1, Number(maxPagesParam) || DEFAULT_MAX_PAGES), DEFAULT_MAX_PAGES)
+      : DEFAULT_MAX_PAGES;
+
     const summary = await reconcileEcotrackOrders(db, provider, company.code, { maxPages });
 
     console.info(
@@ -382,6 +405,9 @@ export async function reconcileCompanyOrders(c: Context<AppContext>) {
     );
     return c.json({ success: true, data: summary }, 200);
   } catch (err) {
+    // Intentional 4xx responses pass through; only carrier/transport
+    // failures below become 502 ExternalApiError.
+    if (err instanceof BusinessLogicError) throw err;
     const msg = err instanceof Error ? err.message : "Reconciliation failed";
     console.error(`[reconcile] failed company=${id}:`, msg);
     throw new ExternalApiError(company.name, msg, { companyId: id, code: company.code });

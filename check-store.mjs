@@ -1,0 +1,10 @@
+import { neon } from '@neondatabase/serverless';
+import fs from 'fs';
+const env = fs.readFileSync('./.env.local','utf8');
+const m = env.match(/DATABASE_URL="([^"]+)"/);
+const sql = neon(m[1]);
+const store = (await sql`SELECT id, name, domain, api_key FROM stores LIMIT 1`)[0];
+console.log(store);
+const res = await fetch(`https://api.boutiquehadiya.store/store/products/999`, { headers: { 'X-Store-API-Key': store.api_key } });
+console.log('status', res.status);
+console.log(await res.text().then(t=>t.slice(0,500)));

@@ -2,10 +2,38 @@
  * Abandoned Orders Queries
  */
 
-import { eq, and, desc, lt, sql, ilike, or } from "drizzle-orm";
+import { eq, and, desc, lt, sql, ilike, or, inArray, ne } from "drizzle-orm";
 import { abandonedOrders, wilayas, communes } from "../db/schema.pg";
 import type { PgDb } from "../db/client.pg";
 import { safeLikeTerm } from "./search";
+
+/** Normalize an Algerian mobile to canonical local form (0[567]XXXXXXXX), or null. */
+export function normalizeDzPhone(phone: string): string | null {
+  const digits = phone.replace(/\D/g, "");
+  let local = digits;
+  if (local.startsWith("00213")) local = local.slice(5);
+  else if (local.startsWith("213")) local = local.slice(3);
+  if (local.startsWith("0")) local = local.slice(1);
+  return /^[567]\d{8}$/.test(local) ? `0${local}` : null;
+}
+
+/**
+ * Textual variants of a phone for DB matching. Shoppers type the same number
+ * as 0558…, +213…, 213… or 00213… across tabs/sessions — exact-match dedup
+ * misses those, leaving phantom pending/abandoned rows behind.
+ */
+export function phoneMatchVariants(phone: string): string[] {
+  const variants = new Set<string>([phone]);
+  const canonical = normalizeDzPhone(phone);
+  if (canonical) {
+    const national = canonical.slice(1);
+    variants.add(canonical);
+    variants.add(`+213${national}`);
+    variants.add(`213${national}`);
+    variants.add(`00213${national}`);
+  }
+  return [...variants];
+}
 
 export interface UpsertAbandonedOrderData {
   sessionId: string;
@@ -128,18 +156,122 @@ export async function markAbandonedOrderConverted(
     );
   // Deduplicate: if this phone had other pending/abandoned checkouts, they are
   // now stale — the customer did order, so remove the duplicates to avoid the
-  // "هنوس pending + converted" confusion. Keep only this converted row.
+  // "pending + converted" confusion. Keep only this converted row.
+  // Match is format-tolerant (0558… vs +213…): same number typed differently
+  // across tabs must still collapse.
   if (row?.phone) {
     await db
       .delete(abandonedOrders)
       .where(
         and(
-          eq(abandonedOrders.phone, row.phone),
-          sql`${abandonedOrders.sessionId} != ${sessionId}`,
-          sql`${abandonedOrders.status} IN ('pending','abandoned')`
+          inArray(abandonedOrders.phone, phoneMatchVariants(row.phone)),
+          ne(abandonedOrders.sessionId, sessionId),
+          inArray(abandonedOrders.status, ["pending", "abandoned"])
         )
       );
   }
+}
+
+/**
+ * Server-side reconcile, called right after a store order is created.
+ * The browser convert signal is unreliable (per-tab sessionStorage, closed
+ * tabs, ad-blocked fetch) — so the order itself is the source of truth:
+ * - open rows older than this phone's latest conversion are stale leftovers
+ *   from previous purchases → delete.
+ * - of the remaining fresh rows (this shopping trip, possibly multi-tab),
+ *   the newest carries this order's attribution → converted; the rest are
+ *   same-trip duplicates → delete.
+ * Never throws past the caller: order creation must not depend on it, so
+ * callers wrap it in try/catch.
+ */
+export async function reconcileAbandonedOrdersOnOrder(
+  db: PgDb,
+  phone: string,
+  orderId: string,
+  orderNumber: string
+): Promise<void> {
+  const now = new Date().toISOString();
+  const variants = phoneMatchVariants(phone);
+
+  const candidates = await db
+    .select({
+      id: abandonedOrders.id,
+      status: abandonedOrders.status,
+      createdAt: abandonedOrders.createdAt,
+      updatedAt: abandonedOrders.updatedAt,
+    })
+    .from(abandonedOrders)
+    .where(
+      and(
+        inArray(abandonedOrders.phone, variants),
+        inArray(abandonedOrders.status, ["pending", "abandoned", "converted"])
+      )
+    )
+    .orderBy(desc(abandonedOrders.createdAt));
+
+  if (candidates.length === 0) return;
+
+  const open = candidates.filter((r) => r.status !== "converted");
+  if (open.length === 0) return;
+
+  const latestConversionAt = candidates
+    .filter((r) => r.status === "converted")
+    .map((r) => r.updatedAt)
+    .sort()
+    .at(-1);
+
+  const staleIds = latestConversionAt
+    ? open.filter((r) => r.createdAt < latestConversionAt).map((r) => r.id)
+    : [];
+  if (staleIds.length > 0) {
+    await db.delete(abandonedOrders).where(inArray(abandonedOrders.id, staleIds));
+  }
+
+  const fresh = open.filter((r) => !staleIds.includes(r.id));
+  if (fresh.length === 0) return;
+
+  const [winner, ...losers] = fresh;
+  await db
+    .update(abandonedOrders)
+    .set({
+      status: "converted",
+      convertedOrderId: orderId,
+      convertedOrderNumber: orderNumber,
+      updatedAt: now,
+    })
+    .where(eq(abandonedOrders.id, winner.id));
+  if (losers.length > 0) {
+    await db
+      .delete(abandonedOrders)
+      .where(inArray(abandonedOrders.id, losers.map((r) => r.id)));
+  }
+}
+
+/**
+ * Cron cleanup for duplicates: a phone with a converted row must not keep
+ * any pending/abandoned sibling — one shopper, one status. Returns the
+ * number of rows purged.
+ */
+export async function purgeStaleAbandonedSiblings(db: PgDb): Promise<number> {
+  const convertedPhones = await db
+    .selectDistinct({ phone: abandonedOrders.phone })
+    .from(abandonedOrders)
+    .where(eq(abandonedOrders.status, "converted"));
+
+  let purged = 0;
+  for (const { phone } of convertedPhones) {
+    const deleted = await db
+      .delete(abandonedOrders)
+      .where(
+        and(
+          inArray(abandonedOrders.phone, phoneMatchVariants(phone)),
+          inArray(abandonedOrders.status, ["pending", "abandoned"])
+        )
+      )
+      .returning({ id: abandonedOrders.id });
+    purged += deleted.length;
+  }
+  return purged;
 }
 
 /** Cron: flip pending → abandoned for records older than 30 minutes. Returns count. */

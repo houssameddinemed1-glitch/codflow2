@@ -260,6 +260,12 @@ html[lang="ar"] body {
   text-align: right;
 }
 
+/* Arabic script is cursive: any letter-spacing disconnects its letters.
+   Neutralize tracking utilities whenever the UI renders in Arabic. */
+html[lang="ar"] * {
+  letter-spacing: 0;
+}
+
 [dir="rtl"] .pagination-controls {
   direction: rtl;
 }

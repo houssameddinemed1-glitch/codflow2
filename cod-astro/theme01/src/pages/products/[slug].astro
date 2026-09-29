@@ -7,16 +7,22 @@
 import StoreLayout from "@/theme/layouts/StoreLayout.astro";
 import ProductDetailContent from "@/theme/components/product/ProductDetailContent.astro";
 import { getStoreContext } from "@/theme/config/store";
+import { fetchProductByHandle } from "@/core/api/client";
 import { actions } from "astro:actions";
 import { isInputError } from "astro:actions";
 
 const { slug } = Astro.params;
 
 // ── STREAMING OPTIMIZATION ──
-// Store context is fetched first (needed for layout)
-// Product data is fetched inside ProductDetailContent component
-// This allows layout/head/navigation to render immediately while product streams in
-const { config, content, isRTL } = await getStoreContext();
+// Store context is fetched first (needed for layout).
+// The product existence check MUST happen here, before any output:
+// ProductDetailContent streams after the layout/head, so a redirect
+// issued from inside it crashes mid-stream (ResponseSentError → empty
+// page, no pixel). Unknown slugs go home (same contract as lp pages).
+const [{ config, content, isRTL }, product] = await Promise.all([
+  getStoreContext(),
+  fetchProductByHandle(slug ?? ""),
+]);
 
 // Action result (must be checked before rendering).
 // Order success → single PRG redirect to the thank-you page. The browser
@@ -32,6 +38,8 @@ if (result?.data?.orderNumber) {
 }
 const fieldErrors  = isInputError(result?.error) ? result.error.fields : {};
 const serverError  = result?.error && !isInputError(result.error) ? result.error.message : null;
+
+if (!product) return Astro.redirect("/");
 ---
 
 <StoreLayout
@@ -46,6 +54,7 @@ const serverError  = result?.error && !isInputError(result.error) ? result.error
   -->
   <ProductDetailContent
     slug={slug!}
+    product={product}
     config={config}
     content={content}
     isRTL={isRTL}

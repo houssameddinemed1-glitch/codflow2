@@ -322,5 +322,56 @@
     },
     "recovered_order": "الطلب {number}",
     "convert_to_order": "تحويل إلى طلب"
+  },
+  "tracking": {
+    "title": "تتبع الطلبات",
+    "subtitle": "كل الطرود المُرسلة عبر شركات التوصيل — آخر تحديث من الناقل لكل طلب. السطر الأخضر تم تسليمه، والأحمر مرتجع، والبرتقالي ما زال في الطريق.",
+    "search_placeholder": "ابحث برقم الطلب أو الاسم أو الهاتف أو رقم التتبع...",
+    "count_label": "{count} طرد",
+    "load_error": "تعذر تحميل طرود التتبع",
+    "refresh_all": "تحديث الكل",
+    "refreshing": "جاري التحديث...",
+    "stats": {
+      "in_transit": "في الطريق",
+      "delivered": "تم تسليمها",
+      "returned": "مرتجعة",
+      "total": "إجمالي المرسل"
+    },
+    "filter": {
+      "status": "الحالة",
+      "company": "الشركة",
+      "all_statuses": "كل الحالات",
+      "all_companies": "كل الشركات"
+    },
+    "status_groups": {
+      "all": "الكل",
+      "in_transit": "قيد التوصيل",
+      "delivered": "مسلّمة",
+      "returned": "مرتجعة"
+    },
+    "table": {
+      "order": "الطلب",
+      "customer": "العميل",
+      "phone": "الهاتف",
+      "wilaya": "الولاية",
+      "company": "الشركة",
+      "tracking_number": "رقم التتبع",
+      "carrier_update": "آخر تحديث من الناقل",
+      "status": "الحالة",
+      "updated": "آخر تحديث",
+      "actions": "إجراءات"
+    },
+    "row": {
+      "view_details": "عرض التفاصيل",
+      "refresh_tracking": "تحديث من الناقل",
+      "tracking_refreshed": "تم جلب آخر تحديث",
+      "tracking_failed": "تعذر جلب التتبع",
+      "no_tracking_events": "لا توجد أحداث بعد من الناقل",
+      "last_event": "آخر حدث"
+    },
+    "empty": {
+      "title": "لا توجد طرود مرسلة",
+      "description": "الطلبات المُرسلة عبر شركة توصيل ستظهر هنا مع تحديثات الناقل أولاً بأول."
+    }
   }
 }

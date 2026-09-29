@@ -7,11 +7,15 @@ import ProductGallery from "@/theme/components/product/ProductGallery.astro";
 import ProductInfo from "@/theme/components/product/ProductInfo.astro";
 import ReviewsIsland from "@/theme/components/product/ReviewsIsland.astro";
 import ShippingIsland from "@/theme/components/product/ShippingIsland.astro";
+import { Icon } from "astro-icon/components";
 import { getProductJsonLd } from "@/theme/utils/seo";
 import { fetchProductByHandle } from "@/core/api/client";
 
 interface Props {
   slug: string;
+  /** Preloaded product (page frontmatter checks existence first so the
+   *  missing-product redirect happens before streaming starts). */
+  product?: any;
   config: any;
   content: any;
   isRTL: boolean;
@@ -19,10 +23,11 @@ interface Props {
   serverError: string | null;
 }
 
-const { slug, config, content, isRTL, fieldErrors, serverError } = Astro.props;
+const { slug, product: preloaded, config, content, isRTL, fieldErrors, serverError } = Astro.props;
 
-// Fetch product data (this component streams when ready)
-const product = await fetchProductByHandle(slug);
+// Fetch product data (this component streams when ready).
+// Prefer the page-provided product; fall back to fetching by slug.
+const product = preloaded ?? await fetchProductByHandle(slug);
 
 if (!product) return Astro.redirect("/");
 
@@ -137,6 +142,32 @@ const jsonLd = getProductJsonLd(product, basePrice);
     </div>
   </div>
 </div>
+
+<!-- ── STICKY ORDER CTA — fixed to the bottom, always visible while
+     scrolling (mobile only). Anchor scroll (no JS) jumps to the form. ── -->
+{!isOutOfStock && (
+  <a href="#order-section" id="product-sticky-cta" class="btn-primary product-sticky-cta lg:hidden">
+    {content.orderCta}
+    <Icon name="heroicons:chevron-down" class="w-5 h-5" />
+  </a>
+)}
+
+<style>
+  /* Sticky CTA — always visible while scrolling (mobile only via lg:hidden).
+     Scoped here (not the page) so the rule reaches this component's markup.
+     Colors/radius/shadow come from .btn-primary + tokens; sizes/offsets
+     are layout, not design. */
+  .product-sticky-cta {
+    position: fixed;
+    bottom: calc(var(--safe-bottom) + 0.75rem);
+    inset-inline: 0;
+    margin-inline: auto;
+    width: min(24rem, calc(100% - 2rem));
+    z-index: 45;
+    box-shadow: var(--shadow-primary);
+    font-weight: 800;
+  }
+</style>
 
 <!-- Reviews section (Deferred Server Island) -->
 {config.reviewsEnabled && (

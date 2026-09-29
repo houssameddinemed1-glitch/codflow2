@@ -6,6 +6,7 @@ import {
   Megaphone,
   LayoutDashboard,
   Package,
+  PackageSearch,
   PackageX,
   Settings,
   Shield,
@@ -84,6 +85,13 @@ export function useNavSections(): NavSection[] {
               scope: "abandoned_orders:read",
             },
           ],
+        },
+        {
+          kind: "leaf",
+          href: "/tracking",
+          label: tN("sidebar.tracking"),
+          icon: PackageSearch,
+          scope: "orders:read",
         },
         {
           kind: "group",

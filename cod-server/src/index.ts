@@ -95,7 +95,8 @@ app.get("/health", (c) => {
 app.route("/api/internal/workflows", internalWorkflowsRouter);
 
 // ─── Cron (Vercel Cron / QStash scheduled) ───────────────────────────────────
-// GET /api/cron — sweep abandoned orders (protected by CRON_SECRET header)
+// GET /api/cron — sweep abandoned orders + sync NOEST order statuses
+// (protected by CRON_SECRET header)
 app.get("/api/cron", async (c) => {
   const secret = c.req.header("authorization")?.replace("Bearer ", "") ?? "";
   const expected = c.env.CRON_SECRET;
@@ -104,7 +105,21 @@ app.get("/api/cron", async (c) => {
   }
   const { sweepAbandonedOrders } = await import("@/cron/sweep-abandoned-orders");
   const count = await sweepAbandonedOrders();
-  return c.json({ ok: true, swept: count });
+
+  // NOEST has no status webhooks — this daily run is the automatic freshness
+  // source for NOEST parcels. Failures must never break the sweep response.
+  let noest: unknown = { ran: false, reason: "skipped" };
+  try {
+    const { getDb } = await import("@/db");
+    const { reconcileAllNoestCompanies } = await import(
+      "@/endpoints/delivery-companies/providers/noest/reconcile"
+    );
+    noest = await reconcileAllNoestCompanies(getDb(c.env.DB));
+  } catch (err) {
+    console.error("[cron] noest reconcile failed:", err instanceof Error ? err.message : err);
+    noest = { ran: false, reason: "error" };
+  }
+  return c.json({ ok: true, swept: count, noest });
 });
 
 // Protected routes (require authentication)
