@@ -212,29 +212,30 @@ export async function syncCarrierGeoNames(
     result.communesMatched++;
   }
 
-  // Replace the carrier's previous map wholesale, then insert the fresh one.
-  await db.transaction(async (tx) => {
-    await tx.delete(carrierWilayas).where(eq(carrierWilayas.carrierCode, carrierCode));
-    await tx.delete(carrierCommunes).where(eq(carrierCommunes.carrierCode, carrierCode));
-    for (const v of wilayaValues) {
-      await tx
+  // Replace the carrier's previous map wholesale, then insert the fresh one —
+  // one atomic batch (D1 executes a batch as a single transaction).
+  await db.batch([
+    db.delete(carrierWilayas).where(eq(carrierWilayas.carrierCode, carrierCode)),
+    db.delete(carrierCommunes).where(eq(carrierCommunes.carrierCode, carrierCode)),
+    ...wilayaValues.map((v) =>
+      db
         .insert(carrierWilayas)
         .values(v)
         .onConflictDoUpdate({
           target: [carrierWilayas.carrierCode, carrierWilayas.wilayaId],
           set: { carrierName: sql`excluded.carrier_name` },
-        });
-    }
-    for (const v of communeValues) {
-      await tx
+        }),
+    ),
+    ...communeValues.map((v) =>
+      db
         .insert(carrierCommunes)
         .values(v)
         .onConflictDoUpdate({
           target: [carrierCommunes.carrierCode, carrierCommunes.communeId],
           set: { carrierName: sql`excluded.carrier_name` },
-        });
-    }
-  });
+        }),
+    ),
+  ]);
 
   return result;
 }

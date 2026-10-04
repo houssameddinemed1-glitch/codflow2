@@ -18,7 +18,8 @@ import {
   stores,
 } from "../db/schema";
 import type { AppDb } from "../db/client";
-
+import { batchAll } from "../lib/batch";
+import type { BatchItem } from "drizzle-orm/batch";
 export interface LandingPageStats {
   views: number;
   orders: number;
@@ -490,26 +491,28 @@ export async function reorderLandingPageImages(
   imageIds: string[],
 ) {
   const now = new Date().toISOString();
-  // One atomic transaction: every position update + the parent touch commit
+  // One atomic batch: every position update + the parent touch commit
   // together — the per-image await loop was N+1 sequential D1 calls.
-  await db.transaction(async (tx) => {
-    for (const [index, imageId] of imageIds.entries()) {
-      await tx
-        .update(landingPageImages)
-        .set({ position: index + 1 })
-        .where(
-          and(
-            eq(landingPageImages.id, imageId),
-            eq(landingPageImages.landingPageId, landingPageId),
-          ),
-        );
-    }
-    // Touch the parent's updatedAt so the studio knows the stack changed.
-    await tx
+  // (D1 has no interactive transactions; db.batch is atomic instead.)
+  const stmts: BatchItem<"sqlite">[] = imageIds.map((imageId, index) =>
+    db
+      .update(landingPageImages)
+      .set({ position: index + 1 })
+      .where(
+        and(
+          eq(landingPageImages.id, imageId),
+          eq(landingPageImages.landingPageId, landingPageId),
+        ),
+      ),
+  );
+  // Touch the parent's updatedAt so the studio knows the stack changed.
+  stmts.push(
+    db
       .update(landingPages)
       .set({ updatedAt: now })
-      .where(eq(landingPages.id, landingPageId));
-  });
+      .where(eq(landingPages.id, landingPageId)),
+  );
+  await batchAll(db, stmts);
   return getLandingPageImages(db, landingPageId);
 }
 
@@ -539,7 +542,7 @@ export async function getLandingPageProducts(db: AppDb, landingPageId: string) {
 
 /**
  * Replace the whole pick list: delete + re-insert with 1-based positions in
- * one transaction, touching the parent so the studio sees the change.
+ * one atomic batch, touching the parent so the studio sees the change.
  * Duplicates are collapsed (first occurrence wins); product existence is the
  * caller's guard (cod-server wrapper), mirroring the image-reorder split.
  */
@@ -550,24 +553,24 @@ export async function setLandingPageProducts(
 ) {
   const now = new Date().toISOString();
   const deduped = [...new Set(productIds)];
-  await db.transaction(async (tx) => {
-    await tx
+  await batchAll(db, [
+    db
       .delete(landingPageProducts)
-      .where(eq(landingPageProducts.landingPageId, landingPageId));
-    for (const [index, productId] of deduped.entries()) {
-      await tx.insert(landingPageProducts).values({
+      .where(eq(landingPageProducts.landingPageId, landingPageId)),
+    ...deduped.map((productId, index) =>
+      db.insert(landingPageProducts).values({
         id: crypto.randomUUID(),
         landingPageId,
         productId,
         position: index + 1,
         createdAt: now,
-      });
-    }
-    await tx
+      }),
+    ),
+    db
       .update(landingPages)
       .set({ updatedAt: now })
-      .where(eq(landingPages.id, landingPageId));
-  });
+      .where(eq(landingPages.id, landingPageId)),
+  ]);
   return getLandingPageProducts(db, landingPageId);
 }
 
@@ -580,19 +583,19 @@ export async function addLandingPageProduct(
   const existing = await getLandingPageProducts(db, landingPageId);
   if (existing.some((r) => r.productId === productId)) return existing;
   const now = new Date().toISOString();
-  await db.transaction(async (tx) => {
-    await tx.insert(landingPageProducts).values({
+  await db.batch([
+    db.insert(landingPageProducts).values({
       id: crypto.randomUUID(),
       landingPageId,
       productId,
       position: existing.length + 1,
       createdAt: now,
-    });
-    await tx
+    }),
+    db
       .update(landingPages)
       .set({ updatedAt: now })
-      .where(eq(landingPages.id, landingPageId));
-  });
+      .where(eq(landingPages.id, landingPageId)),
+  ]);
   return getLandingPageProducts(db, landingPageId);
 }
 
@@ -617,9 +620,9 @@ export async function reorderLandingPageProducts(
   productIds: string[],
 ) {
   const now = new Date().toISOString();
-  await db.transaction(async (tx) => {
-    for (const [index, productId] of productIds.entries()) {
-      await tx
+  await batchAll(db, [
+    ...productIds.map((productId, index) =>
+      db
         .update(landingPageProducts)
         .set({ position: index + 1 })
         .where(
@@ -627,13 +630,13 @@ export async function reorderLandingPageProducts(
             eq(landingPageProducts.landingPageId, landingPageId),
             eq(landingPageProducts.productId, productId),
           ),
-        );
-    }
-    await tx
+        ),
+    ),
+    db
       .update(landingPages)
       .set({ productId: productIds[0], updatedAt: now })
-      .where(eq(landingPages.id, landingPageId));
-  });
+      .where(eq(landingPages.id, landingPageId)),
+  ]);
   return getLandingPageProducts(db, landingPageId);
 }
 
@@ -719,8 +722,8 @@ export async function duplicateLandingPage(db: AppDb, id: string): Promise<strin
   const now = new Date().toISOString();
   const slug = generateLandingPageSlug();
 
-  await db.transaction(async (tx) => {
-    await tx.insert(landingPages).values({
+  await batchAll(db, [
+    db.insert(landingPages).values({
       id: newId,
       slug,
       name: `${source.name} (copy)`,
@@ -733,9 +736,9 @@ export async function duplicateLandingPage(db: AppDb, id: string): Promise<strin
       views: 0,
       createdAt: now,
       updatedAt: now,
-    });
-    for (const image of images) {
-      await tx.insert(landingPageImages).values({
+    }),
+    ...images.map((image) =>
+      db.insert(landingPageImages).values({
         id: crypto.randomUUID(),
         landingPageId: newId,
         r2Key: image.r2Key,
@@ -746,18 +749,18 @@ export async function duplicateLandingPage(db: AppDb, id: string): Promise<strin
         width: image.width,
         height: image.height,
         createdAt: now,
-      });
-    }
-    for (const pick of picks) {
-      await tx.insert(landingPageProducts).values({
+      }),
+    ),
+    ...picks.map((pick) =>
+      db.insert(landingPageProducts).values({
         id: crypto.randomUUID(),
         landingPageId: newId,
         productId: pick.productId,
         position: pick.position,
         createdAt: now,
-      });
-    }
-  });
+      }),
+    ),
+  ]);
 
   return newId;
 }

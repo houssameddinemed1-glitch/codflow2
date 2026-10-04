@@ -42,6 +42,7 @@ import {
   stockMovements,
 } from "../db/schema";
 import type { AppDb } from "../db/client";
+import { batchAll } from "../lib/batch";
 import { parseCheckoutFormPolicy } from "../checkout-form/policy";
 import { resolveStorefrontWidget } from "../whatsapp-widget/config";
 import {
@@ -661,20 +662,17 @@ interface DeductStockInput {
 }
 
 /**
- * Apply the write pair (movement log + atomic deduction) inside a transaction.
+ * Build the write pair (movement log + atomic deduction) for one deduction.
  *
  * The guard lives in the movement INSERT, not just the UPDATE: qtyBefore and
  * qtyAfter are subselects with the availability predicate
  * `inventory >= quantity` baked in. When stock cannot cover the deduction,
  * the subselects return NULL, the NOT NULL constraint on stock_movements
- * fails, and Postgres rolls back the ENTIRE transaction — order, lines,
- * stats, and all. Race-free, and the movement log values come from the
+ * fails, and the enclosing batch rolls back ENTIRELY — order, lines, stats,
+ * and all. Race-free, and the movement log values come from the
  * database itself rather than a racy pre-read.
  */
-async function applyDeduct(
-  tx: Parameters<Parameters<AppDb["transaction"]>[0]>[0],
-  input: DeductStockInput,
-) {
+function deductStatements(db: AppDb, input: DeductStockInput) {
   const { productId, variantId, quantity, orderId, customerId, customerName, now } = input;
 
   const guard =
@@ -684,7 +682,7 @@ async function applyDeduct(
   const inventoryColumn =
     variantId !== null ? productVariants.inventory : products.inventory;
 
-  await tx.insert(stockMovements).values({
+  const movement = db.insert(stockMovements).values({
     id: crypto.randomUUID(),
     productId,
     variantId,
@@ -699,27 +697,28 @@ async function applyDeduct(
     createdAt: now,
   });
 
-  if (variantId !== null) {
-    await tx
-      .update(productVariants)
-      .set({ inventory: sql`${productVariants.inventory} - ${quantity}`, updatedAt: now })
-      .where(
-        and(
-          eq(productVariants.id, variantId),
-          sql`${productVariants.inventory} >= ${quantity}`,
-        ),
-      );
-  } else {
-    await tx
-      .update(products)
-      .set({ inventory: sql`${products.inventory} - ${quantity}`, updatedAt: now })
-      .where(
-        and(
-          eq(products.id, productId),
-          sql`${products.inventory} >= ${quantity}`,
-        ),
-      );
-  }
+  const deduction =
+    variantId !== null
+      ? db
+          .update(productVariants)
+          .set({ inventory: sql`${productVariants.inventory} - ${quantity}`, updatedAt: now })
+          .where(
+            and(
+              eq(productVariants.id, variantId),
+              sql`${productVariants.inventory} >= ${quantity}`,
+            ),
+          )
+      : db
+          .update(products)
+          .set({ inventory: sql`${products.inventory} - ${quantity}`, updatedAt: now })
+          .where(
+            and(
+              eq(products.id, productId),
+              sql`${products.inventory} >= ${quantity}`,
+            ),
+          );
+
+  return [movement, deduction];
 }
 
 export async function createStoreOrder(
@@ -1011,10 +1010,11 @@ export async function createStoreOrder(
   }
   if (rewardDeduct) deductions.push(rewardDeduct);
 
-  // ── Commit phase (one atomic transaction) ────────────────────────────────
+  // Commit phase: one atomic batch (D1 executes a batch as a single
+  // transaction — no interactive transactions available).
 
-  await db.transaction(async (tx) => {
-    await tx.insert(orders).values({
+  await batchAll(db, [
+    db.insert(orders).values({
       id,
       orderNumber,
       customerId: data.customerId,
@@ -1046,35 +1046,26 @@ export async function createStoreOrder(
       customFieldsJson: serializeCustomFieldAnswers(data.customFieldAnswers ?? []),
       createdAt: now,
       updatedAt: now,
-    });
-
-    for (const line of lineRows) {
-      await tx.insert(orderProducts).values(line);
-    }
-    if (rewardLine) {
-      await tx.insert(orderProducts).values(rewardLine);
-    }
-
-    await tx.insert(orderStatusHistory).values({
+    }),
+    ...lineRows.map((line) => db.insert(orderProducts).values(line)),
+    ...(rewardLine ? [db.insert(orderProducts).values(rewardLine)] : []),
+    db.insert(orderStatusHistory).values({
       id: crypto.randomUUID(),
       orderId: id,
       status: "new",
       timestamp: now,
       by: null,
-    });
-    await tx
+    }),
+    db
       .update(customers)
       .set({
         totalOrders: sql`${customers.totalOrders} + 1`,
         totalSpent: sql`${customers.totalSpent} + ${price}`,
         lastOrderAt: now,
       })
-      .where(eq(customers.id, data.customerId));
-
-    for (const input of deductions) {
-      await applyDeduct(tx, input);
-    }
-  });
+      .where(eq(customers.id, data.customerId)),
+    ...deductions.flatMap((input) => deductStatements(db, input)),
+  ]);
 
   return {
     id,

@@ -300,47 +300,48 @@ export async function updateProduct(db: AppDb, productId: string, data: UpdatePr
   if (data.storeFeatured !== undefined) updates.storeFeatured = data.storeFeatured;
   if (data.shippingProfileId !== undefined) updates.shippingProfileId = data.shippingProfileId ?? null;
 
-  await db.transaction(async (tx) => {
-    // Read BEFORE writing: the movement delta is measured against the
-    // pre-edit value. Reading after the update would see the new value and
-    // compute a zero delta, silently dropping the ledger entry.
-    let movement: {
-      id: string; productId: string; variantId: null;
-      type: "ADJUSTMENT_ADD" | "ADJUSTMENT_REMOVE";
-      delta: number; qtyBefore: number; qtyAfter: number;
-      reason: string; reference: null; createdBy: string; createdByName: string;
-      createdAt: string;
-    } | null = null;
-    if (data.inventory !== undefined) {
-      const current = await tx
-        .select({ inventory: products.inventory, hasVariants: products.hasVariants, trackInventory: products.trackInventory })
-        .from(products)
-        .where(eq(products.id, productId))
-        .then((rows) => rows[0] ?? null);
-      if (current?.trackInventory && !current.hasVariants) {
-        const delta = data.inventory - current.inventory;
-        if (delta !== 0) {
-          movement = {
-            id: crypto.randomUUID(),
-            productId,
-            variantId: null,
-            type: delta > 0 ? "ADJUSTMENT_ADD" : "ADJUSTMENT_REMOVE",
-            delta,
-            qtyBefore: current.inventory,
-            qtyAfter: data.inventory,
-            reason: "Product inventory edited",
-            reference: null,
-            createdBy: "system",
-            createdByName: "النظام",
-            createdAt: new Date().toISOString(),
-          };
-        }
+  // Read BEFORE writing: the movement delta is measured against the
+  // pre-edit value. Reading after the update would see the new value and
+  // compute a zero delta, silently dropping the ledger entry.
+  // (Hoisted: D1 has no interactive transactions; the batch below is atomic.)
+  let movement: {
+    id: string; productId: string; variantId: null;
+    type: "ADJUSTMENT_ADD" | "ADJUSTMENT_REMOVE";
+    delta: number; qtyBefore: number; qtyAfter: number;
+    reason: string; reference: null; createdBy: string; createdByName: string;
+    createdAt: string;
+  } | null = null;
+  if (data.inventory !== undefined) {
+    const current = await db
+      .select({ inventory: products.inventory, hasVariants: products.hasVariants, trackInventory: products.trackInventory })
+      .from(products)
+      .where(eq(products.id, productId))
+      .then((rows) => rows[0] ?? null);
+    if (current?.trackInventory && !current.hasVariants) {
+      const delta = data.inventory - current.inventory;
+      if (delta !== 0) {
+        movement = {
+          id: crypto.randomUUID(),
+          productId,
+          variantId: null,
+          type: delta > 0 ? "ADJUSTMENT_ADD" : "ADJUSTMENT_REMOVE",
+          delta,
+          qtyBefore: current.inventory,
+          qtyAfter: data.inventory,
+          reason: "Product inventory edited",
+          reference: null,
+          createdBy: "system",
+          createdByName: "النظام",
+          createdAt: new Date().toISOString(),
+        };
       }
     }
+  }
 
-    await tx.update(products).set(updates).where(eq(products.id, productId));
-    if (movement) await tx.insert(stockMovements).values(movement);
-  });
+  await db.batch([
+    db.update(products).set(updates).where(eq(products.id, productId)),
+    ...(movement ? [db.insert(stockMovements).values(movement)] : []),
+  ]);
   return buildProductDetail(db, productId);
 }
 

@@ -2,6 +2,8 @@ import { eq, inArray, and } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import { drivers, orders, driverPayments } from "@/db/schema";
 import { getDb } from "@/db";
+import { batchAll } from "../../../../cod-shared/lib/batch";
+import type { BatchItem } from "drizzle-orm/batch";
 import type { CreatePaymentInput } from "./validation";
 import { BusinessLogicError } from "@/lib/errors/classes";
 import { ERROR_CODES } from "../../../../cod-shared/errors/codes";
@@ -82,13 +84,13 @@ export async function createDriverPayment(
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
 
-  // One atomic transaction: payment row + order linking + driver counters
-  // commit together or not at all. The previous separate awaits left drift
-  // windows — a failure after linking marked orders settled while pendingCash
-  // stayed inflated (phantom cash, unfixable via retry because of the
-  // settled guard).
-  await db.transaction(async (tx) => {
-    await tx.insert(driverPayments).values({
+  // One atomic batch (D1 executes a batch as a single transaction):
+  // payment row + order linking + driver counters commit together or not at
+  // all. The previous separate awaits left drift windows — a failure after
+  // linking marked orders settled while pendingCash stayed inflated (phantom
+  // cash, unfixable via retry because of the settled guard).
+  const stmts: BatchItem<"sqlite">[] = [
+    db.insert(driverPayments).values({
       id,
       driverId,
       type,
@@ -98,30 +100,36 @@ export async function createDriverPayment(
       createdBy,
       createdByName,
       createdAt: now,
-    });
+    }),
+  ];
 
-    if (type === "cod_remittance" || type === "net_settlement") {
-      await tx
+  if (type === "cod_remittance" || type === "net_settlement") {
+    stmts.push(
+      db
         .update(orders)
         .set({ codPaymentId: id })
-        .where(inArray(orders.id, orderIds));
-      await tx
+        .where(inArray(orders.id, orderIds)),
+      db
         .update(drivers)
         .set({
           pendingCash: sql`GREATEST(0, ${drivers.pendingCash} - ${codTotal})`,
           totalPaid: sql`${drivers.totalPaid} + ${codTotal}`,
           updatedAt: now,
         })
-        .where(eq(drivers.id, driverId));
-    }
+        .where(eq(drivers.id, driverId)),
+    );
+  }
 
-    if (type === "fee_payment" || type === "net_settlement") {
-      await tx
+  if (type === "fee_payment" || type === "net_settlement") {
+    stmts.push(
+      db
         .update(orders)
         .set({ feePaymentId: id })
-        .where(inArray(orders.id, orderIds));
-    }
-  });
+        .where(inArray(orders.id, orderIds)),
+    );
+  }
+
+  await batchAll(db, stmts);
 
   return { id, driverId, type, amount, orderCount: selectedOrders.length, notes: notes ?? null, createdBy, createdByName, createdAt: now };
 }

@@ -87,8 +87,30 @@ export async function createVariant(db: AppDb, productId: string, data: CreateVa
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
 
-  await db.transaction(async (tx) => {
-    await tx.insert(productVariants).values({
+  // Opening stock enters the ledger for tracked products — the audit trail
+  // must reconcile to inventory from the variant's first day.
+  // (Read hoisted: D1 has no interactive transactions; the batch is atomic.)
+  let openingMovement = null as ReturnType<typeof movementValues> | null;
+  if (data.inventory > 0) {
+    const productRow = await db
+      .select({ trackInventory: products.trackInventory })
+      .from(products)
+      .where(eq(products.id, productId))
+      .then((rows) => rows[0] ?? null);
+    if (productRow?.trackInventory) {
+      openingMovement = movementValues({
+        productId,
+        variantId: id,
+        delta: data.inventory,
+        qtyBefore: 0,
+        qtyAfter: data.inventory,
+        reason: "Opening stock — variant created",
+      });
+    }
+  }
+
+  await db.batch([
+    db.insert(productVariants).values({
       id,
       productId,
       variations: JSON.stringify(data.variations),
@@ -106,28 +128,9 @@ export async function createVariant(db: AppDb, productId: string, data: CreateVa
       position: data.position,
       createdAt: now,
       updatedAt: now,
-    });
-
-    // Opening stock enters the ledger for tracked products — the audit trail
-    // must reconcile to inventory from the variant's first day.
-    if (data.inventory > 0) {
-      const productRow = await tx
-        .select({ trackInventory: products.trackInventory })
-        .from(products)
-        .where(eq(products.id, productId))
-        .then((rows) => rows[0] ?? null);
-      if (productRow?.trackInventory) {
-        await tx.insert(stockMovements).values(movementValues({
-          productId,
-          variantId: id,
-          delta: data.inventory,
-          qtyBefore: 0,
-          qtyAfter: data.inventory,
-          reason: "Opening stock — variant created",
-        }));
-      }
-    }
-  });
+    }),
+    ...(openingMovement ? [db.insert(stockMovements).values(openingMovement)] : []),
+  ]);
 
   return getVariantById(db, id);
 }
@@ -148,43 +151,44 @@ export async function updateVariant(db: AppDb, variantId: string, data: UpdateVa
   if (data.active !== undefined) updates.active = data.active;
   if (data.position !== undefined) updates.position = data.position;
 
-  await db.transaction(async (tx) => {
-    // Read BEFORE writing: the movement delta is measured against the
-    // pre-edit value. Reading after the update would see the new value and
-    // compute a zero delta, silently dropping the ledger entry.
-    let movement: ReturnType<typeof movementValues> | null = null;
-    if (data.inventory !== undefined) {
-      const variantRow = await tx
-        .select({ productId: productVariants.productId, inventory: productVariants.inventory })
-        .from(productVariants)
-        .where(eq(productVariants.id, variantId))
+  // Read BEFORE writing: the movement delta is measured against the
+  // pre-edit value. Reading after the update would see the new value and
+  // compute a zero delta, silently dropping the ledger entry.
+  // (Hoisted: D1 has no interactive transactions; the batch below is atomic.)
+  let movement: ReturnType<typeof movementValues> | null = null;
+  if (data.inventory !== undefined) {
+    const variantRow = await db
+      .select({ productId: productVariants.productId, inventory: productVariants.inventory })
+      .from(productVariants)
+      .where(eq(productVariants.id, variantId))
+      .then((rows) => rows[0] ?? null);
+    if (variantRow) {
+      const productRow = await db
+        .select({ trackInventory: products.trackInventory })
+        .from(products)
+        .where(eq(products.id, variantRow.productId))
         .then((rows) => rows[0] ?? null);
-      if (variantRow) {
-        const productRow = await tx
-          .select({ trackInventory: products.trackInventory })
-          .from(products)
-          .where(eq(products.id, variantRow.productId))
-          .then((rows) => rows[0] ?? null);
-        if (productRow?.trackInventory) {
-          const qtyBefore = variantRow.inventory;
-          const delta = data.inventory - qtyBefore;
-          if (delta !== 0) {
-            movement = movementValues({
-              productId: variantRow.productId,
-              variantId,
-              delta,
-              qtyBefore,
-              qtyAfter: data.inventory,
-              reason: "Variant inventory edited",
-            });
-          }
+      if (productRow?.trackInventory) {
+        const qtyBefore = variantRow.inventory;
+        const delta = data.inventory - qtyBefore;
+        if (delta !== 0) {
+          movement = movementValues({
+            productId: variantRow.productId,
+            variantId,
+            delta,
+            qtyBefore,
+            qtyAfter: data.inventory,
+            reason: "Variant inventory edited",
+          });
         }
       }
     }
+  }
 
-    await tx.update(productVariants).set(updates).where(eq(productVariants.id, variantId));
-    if (movement) await tx.insert(stockMovements).values(movement);
-  });
+  await db.batch([
+    db.update(productVariants).set(updates).where(eq(productVariants.id, variantId)),
+    ...(movement ? [db.insert(stockMovements).values(movement)] : []),
+  ]);
   return getVariantById(db, variantId);
 }
 
@@ -200,11 +204,11 @@ export async function deleteVariant(db: AppDb, variantId: string) {
   // ON DELETE cascade, so the variant's scoped movements (including its
   // opening stock) leave with the row. Σ(movements) stays reconciled to the
   // tracked pool; a productId-level -N row would double-count against the
-  // vanished +N. The atomic transaction still guarantees the null-out and the
+  // vanished +N. The atomic batch still guarantees the null-out and the
   // delete commit together.
-  await db.transaction(async (tx) => {
-    await tx.update(orderProducts).set({ variantId: null }).where(eq(orderProducts.variantId, variantId));
-    await tx.delete(productVariants).where(eq(productVariants.id, variantId));
-  });
+  await db.batch([
+    db.update(orderProducts).set({ variantId: null }).where(eq(orderProducts.variantId, variantId)),
+    db.delete(productVariants).where(eq(productVariants.id, variantId)),
+  ]);
   return { success: true };
 }
