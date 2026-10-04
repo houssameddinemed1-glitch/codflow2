@@ -107,7 +107,7 @@ function registerTool(server: McpServer, registration: ToolRegistration): void {
       // Client hints (openai/subject, openai/session) — correlation only,
       // never authorization. Subject keys the per-user rate counter.
       const clientMeta = readClientMeta(ctx);
-      const rate = await checkMcpRateLimit(kvFromEnv(), clientMeta.subject ?? fallbackSubject);
+      const rate = await checkMcpRateLimit(kvFromEnv(env.OAUTH_KV), clientMeta.subject ?? fallbackSubject);
       if (!rate.allowed) {
         await logActivity(
           db,

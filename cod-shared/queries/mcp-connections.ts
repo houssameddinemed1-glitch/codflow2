@@ -26,8 +26,8 @@ import {
   oauthAccessTokens,
   oauthRefreshTokens,
   users,
-} from "../db/schema.pg";
-import type { PgDb } from "../db/client.pg";
+} from "../db/schema";
+import type { AppDb } from "../db/client";
 
 export interface McpConnection {
   clientId:          string;
@@ -56,7 +56,7 @@ export interface ListMcpConnectionsFilter {
 }
 
 export async function listMcpConnections(
-  db: PgDb,
+  db: AppDb,
   filter: ListMcpConnectionsFilter = {},
 ): Promise<McpConnection[]> {
   // D1's bind layer rejects Date — pass milliseconds (integer) so the

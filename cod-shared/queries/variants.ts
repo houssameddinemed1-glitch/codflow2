@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
-import { products, productVariants, orderProducts, stockMovements } from "../db/schema.pg";
-import type { PgDb } from "../db/client.pg";
+import { products, productVariants, orderProducts, stockMovements } from "../db/schema";
+import type { AppDb } from "../db/client";
 
 export interface CreateVariantData {
   variations: Record<string, string>;
@@ -68,7 +68,7 @@ function movementValues(
   };
 }
 
-export async function getVariantsByProduct(db: PgDb, productId: string) {
+export async function getVariantsByProduct(db: AppDb, productId: string) {
   const variants = await db
     .select()
     .from(productVariants)
@@ -78,12 +78,12 @@ export async function getVariantsByProduct(db: PgDb, productId: string) {
   return variants.map(parseVariant);
 }
 
-export async function getVariantById(db: PgDb, variantId: string) {
+export async function getVariantById(db: AppDb, variantId: string) {
   const v = await db.select().from(productVariants).where(eq(productVariants.id, variantId)).then((rows) => rows[0] ?? null);
   return v ? parseVariant(v) : null;
 }
 
-export async function createVariant(db: PgDb, productId: string, data: CreateVariantData) {
+export async function createVariant(db: AppDb, productId: string, data: CreateVariantData) {
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
 
@@ -132,7 +132,7 @@ export async function createVariant(db: PgDb, productId: string, data: CreateVar
   return getVariantById(db, id);
 }
 
-export async function updateVariant(db: PgDb, variantId: string, data: UpdateVariantData) {
+export async function updateVariant(db: AppDb, variantId: string, data: UpdateVariantData) {
   const updates: Record<string, unknown> = { updatedAt: new Date().toISOString() };
 
   if (data.variations !== undefined) updates.variations = JSON.stringify(data.variations);
@@ -188,7 +188,7 @@ export async function updateVariant(db: PgDb, variantId: string, data: UpdateVar
   return getVariantById(db, variantId);
 }
 
-export async function deleteVariant(db: PgDb, variantId: string) {
+export async function deleteVariant(db: AppDb, variantId: string) {
   // Preserve order history — null out the reference rather than blocking deletion.
   const variantRow = await db
     .select({ productId: productVariants.productId, inventory: productVariants.inventory })

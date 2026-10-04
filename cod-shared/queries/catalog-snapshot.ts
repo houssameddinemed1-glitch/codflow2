@@ -12,8 +12,8 @@
  */
 
 import { eq, and, or, inArray, isNull, lte, gte, desc } from "drizzle-orm";
-import { products, productVariants, offers } from "../db/schema.pg";
-import type { PgDb } from "../db/client.pg";
+import { products, productVariants, offers } from "../db/schema";
+import type { AppDb } from "../db/client";
 import { chunkIds } from "./d1-limits";
 import { productIdsOf, variantIdsOf, type CartLine } from "./cart";
 
@@ -84,7 +84,7 @@ const VARIANT_COLUMNS = {
  * and a value a test can pin.
  */
 export async function loadCatalogSnapshot(
-  db: PgDb,
+  db: AppDb,
   lines: CartLine[],
   now: string,
 ): Promise<CatalogSnapshot> {
@@ -154,7 +154,7 @@ export async function loadCatalogSnapshot(
  * overwritten, so what the basket loaded stays authoritative.
  */
 export async function extendSnapshot(
-  db: PgDb,
+  db: AppDb,
   snapshot: CatalogSnapshot,
   extra: { productIds?: string[]; variantIds?: string[]; variantsOfProducts?: string[] },
 ): Promise<void> {

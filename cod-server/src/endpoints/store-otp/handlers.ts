@@ -58,7 +58,7 @@ export async function sendOtp(c: Context<AppContext>) {
   const phone = requireNormalizedPhone(String(body.phone ?? ""));
 
   const guards = createOtpSendGuards();
-  const tripped = await guards.check(kvFromEnv(), storeId, phone, clientIp(c));
+  const tripped = await guards.check(kvFromEnv(c.env.RATE_LIMIT), storeId, phone, clientIp(c));
   if (tripped) {
     throw new BusinessLogicError(
       "Too many verification requests — try again shortly",
@@ -70,7 +70,7 @@ export async function sendOtp(c: Context<AppContext>) {
   const client = createDzverifyClient(config.apiKey);
   try {
     const request = await client.sendOtp(phone, { language: config.language });
-    await recordOtpSend(kvFromEnv(), storeId, phone, clientIp(c));
+    await recordOtpSend(kvFromEnv(c.env.RATE_LIMIT), storeId, phone, clientIp(c));
 
     return c.json(
       {

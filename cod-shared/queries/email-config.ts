@@ -8,8 +8,8 @@
  * Never return the raw row to a client.
  */
 
-import type { PgDb } from "../db/client.pg";
-import { storeEmailConfig } from "../db/schema.pg";
+import type { AppDb } from "../db/client";
+import { storeEmailConfig } from "../db/schema";
 import { eq } from "drizzle-orm";
 
 export interface EmailConfig {
@@ -22,7 +22,7 @@ export interface EmailConfig {
 }
 
 /** Safe projection — no API key. Truth for "is email sending active". */
-export async function getEmailConfig(db: PgDb, storeId: string): Promise<EmailConfig | undefined> {
+export async function getEmailConfig(db: AppDb, storeId: string): Promise<EmailConfig | undefined> {
   const row = await db
     .select({
       storeId: storeEmailConfig.storeId,
@@ -40,7 +40,7 @@ export async function getEmailConfig(db: PgDb, storeId: string): Promise<EmailCo
 
 /** Full row including the Sendili API key. Server-side callers only. */
 export async function getEmailConfigRaw(
-  db: PgDb,
+  db: AppDb,
   storeId: string
 ): Promise<typeof storeEmailConfig.$inferSelect | undefined> {
   return db
@@ -60,7 +60,7 @@ export interface UpsertEmailConfigData {
 }
 
 export async function upsertEmailConfig(
-  db: PgDb,
+  db: AppDb,
   storeId: string,
   data: UpsertEmailConfigData
 ): Promise<EmailConfig> {

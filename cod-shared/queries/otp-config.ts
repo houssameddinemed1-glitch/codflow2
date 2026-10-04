@@ -8,8 +8,8 @@
  * provider. Never return the raw row to a client.
  */
 
-import type { PgDb } from "../db/client.pg";
-import { storeOtpConfig } from "../db/schema.pg";
+import type { AppDb } from "../db/client";
+import { storeOtpConfig } from "../db/schema";
 import { eq } from "drizzle-orm";
 
 export interface OtpConfig {
@@ -21,7 +21,7 @@ export interface OtpConfig {
 }
 
 /** Safe projection — no API key. Truth for "is verification active". */
-export async function getOtpConfig(db: PgDb, storeId: string): Promise<OtpConfig | undefined> {
+export async function getOtpConfig(db: AppDb, storeId: string): Promise<OtpConfig | undefined> {
   const row = await db
     .select({
       storeId: storeOtpConfig.storeId,
@@ -38,7 +38,7 @@ export async function getOtpConfig(db: PgDb, storeId: string): Promise<OtpConfig
 
 /** Full row including the dzverify API key. Server-side callers only. */
 export async function getOtpConfigRaw(
-  db: PgDb,
+  db: AppDb,
   storeId: string
 ): Promise<typeof storeOtpConfig.$inferSelect | undefined> {
   return db
@@ -55,7 +55,7 @@ export interface UpsertOtpConfigData {
 }
 
 export async function upsertOtpConfig(
-  db: PgDb,
+  db: AppDb,
   storeId: string,
   data: UpsertOtpConfigData
 ): Promise<OtpConfig> {

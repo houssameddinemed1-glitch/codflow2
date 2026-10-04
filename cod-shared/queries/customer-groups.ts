@@ -1,6 +1,6 @@
 import { eq, and, ilike, sql } from "drizzle-orm";
-import { customerGroups, customerGroupMembers, customers } from "../db/schema.pg";
-import type { PgDb } from "../db/client.pg";
+import { customerGroups, customerGroupMembers, customers } from "../db/schema";
+import type { AppDb } from "../db/client";
 
 export interface CustomerGroupFilters {
   search?: string;
@@ -20,7 +20,7 @@ export interface UpdateCustomerGroupData {
   color?: string;
 }
 
-export async function getAllGroups(db: PgDb, filters?: CustomerGroupFilters) {
+export async function getAllGroups(db: AppDb, filters?: CustomerGroupFilters) {
   const conditions = [];
   if (filters?.search) {
     conditions.push(ilike(customerGroups.name, `%${filters.search}%`));
@@ -41,7 +41,7 @@ export async function getAllGroups(db: PgDb, filters?: CustomerGroupFilters) {
   return await db.select().from(customerGroups).limit(limit).offset(offset);
 }
 
-export async function getGroupById(db: PgDb, groupId: string) {
+export async function getGroupById(db: AppDb, groupId: string) {
   return await db
     .select()
     .from(customerGroups)
@@ -49,7 +49,7 @@ export async function getGroupById(db: PgDb, groupId: string) {
     .then((rows) => rows[0] ?? null);
 }
 
-export async function getGroupWithMembers(db: PgDb, groupId: string) {
+export async function getGroupWithMembers(db: AppDb, groupId: string) {
   const group = await getGroupById(db, groupId);
   if (!group) return null;
 
@@ -71,7 +71,7 @@ export async function getGroupWithMembers(db: PgDb, groupId: string) {
   return { ...group, members };
 }
 
-export async function createGroup(db: PgDb, data: CreateCustomerGroupData) {
+export async function createGroup(db: AppDb, data: CreateCustomerGroupData) {
   const now = new Date().toISOString();
   const groupId = crypto.randomUUID();
 
@@ -89,7 +89,7 @@ export async function createGroup(db: PgDb, data: CreateCustomerGroupData) {
 }
 
 export async function updateGroup(
-  db: PgDb,
+  db: AppDb,
   groupId: string,
   data: UpdateCustomerGroupData,
 ) {
@@ -103,11 +103,11 @@ export async function updateGroup(
   return getGroupById(db, groupId);
 }
 
-export async function deleteGroup(db: PgDb, groupId: string) {
+export async function deleteGroup(db: AppDb, groupId: string) {
   await db.delete(customerGroups).where(eq(customerGroups.id, groupId));
 }
 
-export async function addMember(db: PgDb, groupId: string, customerId: string) {
+export async function addMember(db: AppDb, groupId: string, customerId: string) {
   const now = new Date().toISOString();
 
   await db
@@ -127,7 +127,7 @@ export async function addMember(db: PgDb, groupId: string, customerId: string) {
     .where(eq(customerGroups.id, groupId));
 }
 
-export async function removeMember(db: PgDb, groupId: string, customerId: string) {
+export async function removeMember(db: AppDb, groupId: string, customerId: string) {
   await db
     .delete(customerGroupMembers)
     .where(

@@ -1,9 +1,8 @@
 /**
- * Integration Tests for Images Endpoint (Vercel Blob port)
+ * Integration Tests for Images Endpoint (R2 port)
  *
  * Tests error scenarios for images endpoints. Storage goes through the
- * `@/lib/blob` seam (mocked here); the S3 presign route is retired —
- * direct browser uploads use POST /api/images/blob-callback instead.
+ * `@/lib/blob` seam (mocked here).
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
@@ -12,13 +11,14 @@ import type { AppContext } from "@/types";
 import { errorHandler } from "@/middleware/error";
 import { ERROR_CODES, ERROR_CATEGORIES } from "../../../../cod-shared/errors/codes";
 import * as handlers from "./handlers";
-import { blobPut, blobDel, blobPublicUrl } from "@/lib/blob";
+import { blobPut, blobDel, blobStream } from "@/lib/blob";
 
 vi.mock("@/lib/blob", () => ({
   blobPut: vi.fn(),
   blobDel: vi.fn(),
   blobContentType: vi.fn(),
   blobPublicUrl: vi.fn(),
+  blobStream: vi.fn(),
 }));
 
 // Rows resolved by bare-awaited drizzle builders (pg-convention thenable).
@@ -44,14 +44,17 @@ vi.mock("@/db", () => ({
 
 describe("Images Endpoint - Error Scenarios", () => {
   let app: Hono<AppContext>;
+  let testEnv: Record<string, any>;
 
   beforeEach(() => {
     app = new Hono<AppContext>();
+    testEnv = {};
 
     // Add middleware to inject mock env and user
     app.use("*", async (c, next) => {
       c.env = {
         DB: mockDb,
+        ...testEnv,
       } as any;
       c.set("user", { id: "user-123", email: "test@example.com" } as any);
       await next();
@@ -136,12 +139,12 @@ describe("Images Endpoint - Error Scenarios", () => {
       expect(body.context).toHaveProperty("fileName", "large-image.jpg");
     });
 
-    it("should return 500 with INTERNAL_SERVER_ERROR code when Blob upload fails", async () => {
+    it("should return 500 with INTERNAL_SERVER_ERROR code when R2 upload fails", async () => {
       const formData = new FormData();
       const file = new File(["test"], "test.jpg", { type: "image/jpeg" });
       formData.append("file", file);
 
-      // Mock Blob put to throw an error
+      // Mock R2 put to throw an error
       vi.mocked(blobPut).mockRejectedValue(new Error("Blob connection failed"));
 
       const res = await app.request("/api/images/upload", {
@@ -214,8 +217,8 @@ describe("Images Endpoint - Error Scenarios", () => {
       expect(body.context).toHaveProperty("key");
     });
 
-    it("should return 404 with IMAGE_NOT_FOUND code when image does not exist in Blob", async () => {
-      vi.mocked(blobPublicUrl).mockResolvedValue(null);
+    it("should return 404 with IMAGE_NOT_FOUND code when image does not exist in R2", async () => {
+      vi.mocked(blobStream).mockResolvedValue(null);
 
       const res = await app.request("/images/products/nonexistent.jpg", {
         method: "GET",
@@ -234,15 +237,36 @@ describe("Images Endpoint - Error Scenarios", () => {
       });
     });
 
-    it("should 301-redirect to the Blob CDN URL when image exists", async () => {
-      vi.mocked(blobPublicUrl).mockResolvedValue("https://blob.example.com/products/test.jpg");
+    it("should 301-redirect to the media domain when image exists", async () => {
+      testEnv.MEDIA_DOMAIN = "media.example";
+      vi.mocked(blobStream).mockResolvedValue({
+        bytes: new Uint8Array([1, 2, 3]).buffer,
+        contentType: "image/jpeg",
+        etag: "abc",
+      });
 
       const res = await app.request("/images/products/test.jpg", {
         method: "GET",
       });
 
       expect(res.status).toBe(301);
-      expect(res.headers.get("Location")).toBe("https://blob.example.com/products/test.jpg");
+      expect(res.headers.get("Location")).toBe("https://media.example/products/test.jpg");
+    });
+
+    it("should stream bytes from R2 when no media domain is set", async () => {
+      vi.mocked(blobStream).mockResolvedValue({
+        bytes: new Uint8Array([1, 2, 3]).buffer,
+        contentType: "image/jpeg",
+        etag: "abc",
+      });
+
+      const res = await app.request("/images/products/test.jpg", {
+        method: "GET",
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Content-Type")).toBe("image/jpeg");
+      expect(res.headers.get("ETag")).toBe("abc");
     });
   });
 

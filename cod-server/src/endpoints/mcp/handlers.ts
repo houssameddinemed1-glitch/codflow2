@@ -135,7 +135,7 @@ async function buildConnection(
     const createdAtIso = new Date(grant.createdAt * 1000).toISOString();
     if (!connectedAt || createdAtIso < connectedAt) connectedAt = createdAtIso;
     for (const scope of grant.scope) scopes.add(scope);
-    const marker = await readMcpLastUsed(kvFromEnv(), userId, grant.id);
+    const marker = await readMcpLastUsed(kvFromEnv(c.env.OAUTH_KV), userId, grant.id);
     if (marker && (!lastUsedAt || marker > lastUsedAt)) lastUsedAt = marker;
   }
 
@@ -197,7 +197,7 @@ async function revokeGrantsForClient(
   const grants = (await listAllGrants(h, userId)).filter((g) => g.clientId === clientId);
   for (const grant of grants) {
     await h.revokeGrant(grant.id, userId);
-    await deleteMcpLastUsed(kvFromEnv(), userId, grant.id);
+    await deleteMcpLastUsed(kvFromEnv(c.env.OAUTH_KV), userId, grant.id);
   }
   return grants.length;
 }

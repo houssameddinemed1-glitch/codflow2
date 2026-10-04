@@ -1,6 +1,6 @@
 import { eq, and, ilike, count, isNull } from "drizzle-orm";
-import { productCategories, products } from "../db/schema.pg";
-import type { PgDb } from "../db/client.pg";
+import { productCategories, products } from "../db/schema";
+import type { AppDb } from "../db/client";
 
 export interface GroupFilters {
   search?: string;
@@ -35,7 +35,7 @@ function toSlug(name: string, id: string) {
   return name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "").replace(/-+/g, "-") + "-" + id.slice(0, 8);
 }
 
-export async function getAllGroups(db: PgDb, filters?: GroupFilters) {
+export async function getAllGroups(db: AppDb, filters?: GroupFilters) {
   const conditions = [];
   if (filters?.search) conditions.push(ilike(productCategories.name, `%${filters.search}%`));
   if (filters?.parentId) conditions.push(eq(productCategories.parentId, filters.parentId));
@@ -60,7 +60,7 @@ export async function getAllGroups(db: PgDb, filters?: GroupFilters) {
   }));
 }
 
-export async function getGroupById(db: PgDb, id: string) {
+export async function getGroupById(db: AppDb, id: string) {
   const cat = await db.select().from(productCategories).where(eq(productCategories.id, id)).then((rows) => rows[0] ?? null);
   if (!cat) return null;
   const [childrenRows, productsCountRow] = await Promise.all([
@@ -77,7 +77,7 @@ export async function getGroupById(db: PgDb, id: string) {
   return { ...cat, children: childrenRows, productsCount: productsCountRow?.count ?? 0 };
 }
 
-export async function createGroup(db: PgDb, data: CreateGroupData) {
+export async function createGroup(db: AppDb, data: CreateGroupData) {
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
   const slug = data.slug || toSlug(data.name, id);
@@ -100,7 +100,7 @@ export async function createGroup(db: PgDb, data: CreateGroupData) {
   return getGroupById(db, id);
 }
 
-export async function updateGroup(db: PgDb, id: string, data: UpdateGroupData) {
+export async function updateGroup(db: AppDb, id: string, data: UpdateGroupData) {
   const updates: Record<string, unknown> = { updatedAt: new Date().toISOString() };
   if (data.name !== undefined) updates.name = data.name;
   if (data.slug !== undefined) updates.slug = data.slug;
@@ -116,7 +116,7 @@ export async function updateGroup(db: PgDb, id: string, data: UpdateGroupData) {
   return getGroupById(db, id);
 }
 
-export async function deleteGroup(db: PgDb, id: string) {
+export async function deleteGroup(db: AppDb, id: string) {
   await db.delete(productCategories).where(eq(productCategories.id, id));
   return { success: true };
 }

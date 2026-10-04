@@ -22,8 +22,8 @@ import {
   shippingProfiles,
   shippingRules,
   shippingRuleCommunes,
-} from "../db/schema.pg";
-import type { PgDb } from "../db/client.pg";
+} from "../db/schema";
+import type { AppDb } from "../db/client";
 import { chunkIds } from "./d1-limits";
 
 export interface DeliveryFeeParams {
@@ -89,7 +89,7 @@ function candidateProfileIds(
 }
 
 export async function resolveDeliveryFee(
-  db: PgDb,
+  db: AppDb,
   params: DeliveryFeeParams,
 ): Promise<number | null> {
   const { productIds, wilayaId, communeId, deliveryType, storeId, subtotal } = params;

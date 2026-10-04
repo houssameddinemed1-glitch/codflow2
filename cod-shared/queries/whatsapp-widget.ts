@@ -14,8 +14,8 @@
  */
 
 import { eq } from "drizzle-orm";
-import { stores } from "../db/schema.pg";
-import type { PgDb } from "../db/client.pg";
+import { stores } from "../db/schema";
+import type { AppDb } from "../db/client";
 import {
   isDefaultWhatsAppWidgetConfig,
   serializeWhatsAppWidgetConfig,
@@ -23,7 +23,7 @@ import {
 } from "../whatsapp-widget/config";
 
 export async function saveWhatsAppWidgetConfig(
-  db: PgDb,
+  db: AppDb,
   storeId: string,
   config: WhatsAppWidgetConfig,
 ): Promise<WhatsAppWidgetConfig> {

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { getDb } from "@/db";
+import type { AppDb } from "@/db";
 import { orders, communes, orderProducts, stores, capiEventLog, landingPages } from "@/db/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { getPixelConfig } from "../../../cod-shared/queries/pixel-config";
@@ -42,7 +42,7 @@ export type CapiRunResult =
  * Throws on send failure so QStash retries (5x); every early exit returns
  * skipped (no retry). The claim row + in-flight guard keep redeliveries safe.
  */
-export async function runCapiEvent(raw: unknown): Promise<CapiRunResult> {
+export async function runCapiEvent(db: AppDb, raw: unknown): Promise<CapiRunResult> {
   const parsed = CodCapiParamsSchema.safeParse(raw);
   if (!parsed.success) {
     const errorMsg = parsed.error.issues.map((e) => `${e.path.join(".")}: ${e.message}`).join(", ");
@@ -50,7 +50,6 @@ export async function runCapiEvent(raw: unknown): Promise<CapiRunResult> {
   }
 
   const { orderId, eventName, stage, triggeredAt, eventSourceUrl } = parsed.data;
-  const db = getDb();
 
   const order = await db
     .select({
@@ -217,7 +216,7 @@ export async function runCapiEvent(raw: unknown): Promise<CapiRunResult> {
     });
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
-    await db.execute(
+    await db.run(
       sql`UPDATE capi_event_log
           SET status = 'failed', error = ${errorMsg}, sent_at = ${now}
           WHERE order_id = ${orderId} AND stage = ${stage} AND event_name = ${eventName}`,
@@ -226,7 +225,7 @@ export async function runCapiEvent(raw: unknown): Promise<CapiRunResult> {
   }
 
   const status = capiResult.success ? "sent" : "failed";
-  await db.execute(
+  await db.run(
     sql`UPDATE capi_event_log
         SET status = ${status}, meta_event_id = ${capiResult.fbtrace_id ?? null}, error = ${capiResult.error ?? null}, sent_at = ${now}
         WHERE order_id = ${orderId} AND stage = ${stage} AND event_name = ${eventName}`,

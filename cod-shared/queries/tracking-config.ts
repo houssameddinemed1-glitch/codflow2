@@ -26,8 +26,8 @@
  * route into a client-facing payload because the function those callers use
  * does not return it.
  */
-import type { PgDb } from "../db/client.pg";
-import { storePixelConfig, landingPagePixelConfig } from "../db/schema.pg";
+import type { AppDb } from "../db/client";
+import { storePixelConfig, landingPagePixelConfig } from "../db/schema";
 import { eq } from "drizzle-orm";
 import type { ConversionEvent } from "./pixel-config";
 
@@ -163,7 +163,7 @@ export function publicTrackingFrom(
 }
 
 export async function resolveTrackingConfig(
-  db: PgDb,
+  db: AppDb,
   ctx: TrackingContext,
 ): Promise<EffectiveTrackingConfig | null> {
   const storeRow = await db
@@ -189,7 +189,7 @@ export async function resolveTrackingConfig(
 }
 
 export async function resolvePublicTracking(
-  db: PgDb,
+  db: AppDb,
   ctx: TrackingContext,
 ): Promise<PublicTracking> {
   const config = await resolveTrackingConfig(db, ctx);

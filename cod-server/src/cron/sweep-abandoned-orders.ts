@@ -1,11 +1,10 @@
-import { getDb } from "@/db";
+import type { AppDb } from "@/db";
 import {
   sweepPendingToAbandoned,
   purgeStaleAbandonedSiblings,
 } from "../../../cod-shared/queries/abandoned-orders";
 
-export async function sweepAbandonedOrders(): Promise<number> {
-  const db = getDb();
+export async function sweepAbandonedOrders(db: AppDb): Promise<number> {
   const count = await sweepPendingToAbandoned(db);
   let purged = 0;
   try {

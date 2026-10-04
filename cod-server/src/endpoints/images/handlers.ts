@@ -3,7 +3,7 @@ import type { AppContext } from "@/types";
 import { getDb } from "@/db";
 import { productImages } from "@/db/schema";
 import { eq, and, asc } from "drizzle-orm";
-import { blobPut, blobDel, blobPublicUrl } from "@/lib/blob";
+import { blobPut, blobDel, blobStream } from "@/lib/blob";
 import { NotFoundError, ValidationError, SystemError } from "@/lib/errors/classes";
 import { ERROR_CODES } from "../../../../cod-shared/errors/codes";
 
@@ -94,8 +94,11 @@ export async function uploadImage(c: Context<AppContext>) {
 }
 /**
  * GET /images/:key{.+}
- * Permanent redirect to the Vercel Blob CDN URL. No auth — images are public.
- * Keys are immutable (content never changes under a key), so a 301 is safe
+ * Public image serving. With MEDIA_DOMAIN set the route 301-redirects to
+ * the custom domain (immutable keys make the redirect cache-safe forever);
+ * otherwise the bytes stream straight from R2 with cache + CORS headers.
+ * No auth — images are public.
+ * Keys are immutable (content never changes under a key), so caching is safe
  * and keeps every previously issued /images/* URL working forever.
  */
 export async function serveImage(c: Context<AppContext>) {
@@ -118,25 +121,22 @@ export async function serveImage(c: Context<AppContext>) {
     );
   }
 
-  try {
-    const url = await blobPublicUrl(key);
-    if (!url) {
-      throw new NotFoundError("Image", key);
-    }
-
-    return c.redirect(url, 301);
-  } catch (error) {
-    // Re-throw custom errors so middleware can handle them
-    if (error instanceof NotFoundError || error instanceof ValidationError) {
-      throw error;
-    }
-    // Wrap unexpected errors
-    throw new SystemError(
-      "Failed to retrieve image from storage",
-      ERROR_CODES.INTERNAL_SERVER_ERROR,
-      { key, error: error instanceof Error ? error.message : String(error) }
-    );
+  const mediaDomain = c.env.MEDIA_DOMAIN;
+  if (mediaDomain) {
+    return c.redirect(`https://${mediaDomain}/${key}`, 301);
   }
+
+  const streamed = await blobStream(key);
+  if (!streamed) {
+    throw new NotFoundError("Image", key);
+  }
+  const headers: Record<string, string> = {
+    "Cache-Control": "public, max-age=31536000, immutable",
+    "Access-Control-Allow-Origin": "*",
+    ETag: streamed.etag,
+  };
+  if (streamed.contentType) headers["Content-Type"] = streamed.contentType;
+  return c.body(streamed.bytes, 200, headers);
 }
 
 /**

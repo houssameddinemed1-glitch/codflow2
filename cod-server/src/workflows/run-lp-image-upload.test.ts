@@ -85,14 +85,14 @@ beforeEach(() => {
 
 describe("runLpImageUpload", () => {
   it("rejects an invalid payload without throwing (no retry)", async () => {
-    const res = await runLpImageUpload({ kind: "url" });
+    const res = await runLpImageUpload({} as never, { kind: "url" });
     expect(res).toMatchObject({ skipped: true });
     expect(jobQueries.markLpImageUploadFailed).not.toHaveBeenCalled();
     expect(blobMocks.blobPut).not.toHaveBeenCalled();
   });
 
   it("records failed when the job id is valid but the payload is not", async () => {
-    const res = await runLpImageUpload({ uploadJobId: JOB_ID, kind: "nope" });
+    const res = await runLpImageUpload({} as never, { uploadJobId: JOB_ID, kind: "nope" });
     expect(res).toMatchObject({ skipped: true });
     expect(jobQueries.markLpImageUploadFailed).toHaveBeenCalledWith(
       expect.anything(),
@@ -102,7 +102,7 @@ describe("runLpImageUpload", () => {
   });
 
   it("url kind: downloads, stores, inserts, completes, audits", async () => {
-    const res = await runLpImageUpload(urlPayload());
+    const res = await runLpImageUpload({} as never, urlPayload());
 
     expect(res).toEqual({ success: true, imageId: "img-1" });
     expect(blobMocks.blobPut).toHaveBeenCalledWith(
@@ -135,7 +135,7 @@ describe("runLpImageUpload", () => {
     };
     jobQueries.getLandingPageImages.mockResolvedValue([existing]);
 
-    const res = await runLpImageUpload(urlPayload());
+    const res = await runLpImageUpload({} as never, urlPayload());
 
     expect(res).toEqual({ success: true, imageId: "img-9" });
     expect(jobQueries.addLandingPageImage).not.toHaveBeenCalled();
@@ -149,7 +149,7 @@ describe("runLpImageUpload", () => {
   it("url kind: 404 from the image host fails terminally (no retry)", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("nope", { status: 404 })));
 
-    const res = await runLpImageUpload(urlPayload());
+    const res = await runLpImageUpload({} as never, urlPayload());
 
     expect(res).toMatchObject({ skipped: true, reason: "terminal" });
     expect(jobQueries.markLpImageUploadFailed).toHaveBeenCalledWith(
@@ -163,14 +163,14 @@ describe("runLpImageUpload", () => {
   it("url kind: 500 from the image host throws (QStash retries)", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("boom", { status: 500 })));
 
-    await expect(runLpImageUpload(urlPayload())).rejects.toThrow("HTTP 500");
+    await expect(runLpImageUpload({} as never, urlPayload())).rejects.toThrow("HTTP 500");
     expect(jobQueries.markLpImageUploadFailed).not.toHaveBeenCalled();
   });
 
   it("bytes kind: missing blob fails terminally", async () => {
     blobMocks.blobPublicUrl.mockResolvedValue(null);
 
-    const res = await runLpImageUpload({
+    const res = await runLpImageUpload({} as never, {
       uploadJobId: JOB_ID,
       kind: "bytes",
       landingPageId: PAGE_ID,
@@ -190,7 +190,7 @@ describe("runLpImageUpload", () => {
   it("bytes kind: verifies the stored object and completes", async () => {
     blobMocks.blobPublicUrl.mockResolvedValue("https://blob.example/landing/x.png");
 
-    const res = await runLpImageUpload({
+    const res = await runLpImageUpload({} as never, {
       uploadJobId: JOB_ID,
       kind: "bytes",
       landingPageId: PAGE_ID,
@@ -206,7 +206,7 @@ describe("runLpImageUpload", () => {
   it("fails terminally when the landing page is gone", async () => {
     jobQueries.getLandingPageById.mockResolvedValue(null);
 
-    const res = await runLpImageUpload(urlPayload());
+    const res = await runLpImageUpload({} as never, urlPayload());
 
     expect(res).toMatchObject({ skipped: true, reason: "landing_page_gone" });
     expect(jobQueries.markLpImageUploadFailed).toHaveBeenCalledWith(
@@ -216,3 +216,4 @@ describe("runLpImageUpload", () => {
     );
   });
 });
+

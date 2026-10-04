@@ -14,8 +14,8 @@
  * stored secret through — the secret never round-trips to any client.
  */
 
-import type { PgDb } from "../db/client.pg";
-import { storeTurnstileConfig } from "../db/schema.pg";
+import type { AppDb } from "../db/client";
+import { storeTurnstileConfig } from "../db/schema";
 import { eq } from "drizzle-orm";
 
 export interface TurnstileConfig {
@@ -28,7 +28,7 @@ export interface TurnstileConfig {
 
 /** Safe projection — no secret key. Truth for "is Turnstile active". */
 export async function getTurnstileConfig(
-  db: PgDb,
+  db: AppDb,
   storeId: string
 ): Promise<TurnstileConfig | undefined> {
   const row = await db
@@ -47,7 +47,7 @@ export async function getTurnstileConfig(
 
 /** Full row including the siteverify secret. Server-side callers only. */
 export async function getTurnstileConfigRaw(
-  db: PgDb,
+  db: AppDb,
   storeId: string
 ): Promise<typeof storeTurnstileConfig.$inferSelect | undefined> {
   return db
@@ -65,7 +65,7 @@ export interface UpsertTurnstileConfigData {
 }
 
 export async function upsertTurnstileConfig(
-  db: PgDb,
+  db: AppDb,
   storeId: string,
   data: UpsertTurnstileConfigData
 ): Promise<TurnstileConfig> {

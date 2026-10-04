@@ -10,8 +10,8 @@
  * that as "no map, current behavior").
  */
 import { eq, sql } from "drizzle-orm";
-import { carrierWilayas, carrierCommunes, wilayas, communes } from "../db/schema.pg";
-import type { PgDb } from "../db/client.pg";
+import { carrierWilayas, carrierCommunes, wilayas, communes } from "../db/schema";
+import type { AppDb } from "../db/client";
 
 export interface CarrierGeoSyncResult {
   wilayasMatched: number;
@@ -71,7 +71,7 @@ function isNearVariant(a: string, b: string): boolean {
 
 /** Resolve one wilaya → the carrier's exact string (null = no map row). */
 export async function resolveCarrierWilayaName(
-  db: PgDb,
+  db: AppDb,
   carrierCode: string,
   wilayaId: number,
 ): Promise<string | null> {
@@ -87,7 +87,7 @@ export async function resolveCarrierWilayaName(
 
 /** Resolve one commune → the carrier's exact string (null = no map row). */
 export async function resolveCarrierCommuneName(
-  db: PgDb,
+  db: AppDb,
   carrierCode: string,
   communeId: string,
 ): Promise<string | null> {
@@ -118,7 +118,7 @@ export async function resolveCarrierCommuneName(
  *   wilayas: [{ id, name }], communes: [{ id, name, wilayaId }]
  */
 export async function syncCarrierGeoNames(
-  db: PgDb,
+  db: AppDb,
   carrierCode: string,
   carrierNames: {
     wilayas: Array<{ id: number; name: string }>;
@@ -240,7 +240,7 @@ export async function syncCarrierGeoNames(
 }
 
 /** Count of mapped communes for a carrier — powers dashboard sync status. */
-export async function countCarrierCommuneMappings(db: PgDb, carrierCode: string): Promise<number> {
+export async function countCarrierCommuneMappings(db: AppDb, carrierCode: string): Promise<number> {
   const rows = await db
     .select({ id: carrierCommunes.communeId })
     .from(carrierCommunes)
@@ -251,7 +251,7 @@ export async function countCarrierCommuneMappings(db: PgDb, carrierCode: string)
 
 /** Bulk resolve commune IDs → carrier names for one carrier (dispatch batch path). */
 export async function resolveCarrierCommuneNames(
-  db: PgDb,
+  db: AppDb,
   carrierCode: string,
   communeIds: string[],
 ): Promise<Map<string, string>> {

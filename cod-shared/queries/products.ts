@@ -1,6 +1,6 @@
 import { eq, and, ilike, or, sum, isNull, sql, inArray, getTableColumns } from "drizzle-orm";
-import { products, productCategories, productVariants, productImages, reviews, stockMovements } from "../db/schema.pg";
-import type { PgDb } from "../db/client.pg";
+import { products, productCategories, productVariants, productImages, reviews, stockMovements } from "../db/schema";
+import type { AppDb } from "../db/client";
 import { safeLikeTerm } from "./search";
 import { sanitizeRichText } from "../lib/sanitize-html";
 import { toPlainText } from "../lib/rich-text";
@@ -103,7 +103,7 @@ function normalizeHandle(handle: string | undefined, name: string, id: string): 
   return toHandle(name, id);
 }
 
-async function buildProductDetail(db: PgDb, productId: string) {
+async function buildProductDetail(db: AppDb, productId: string) {
   const product = await db.select().from(products).where(and(eq(products.id, productId), isNull(products.deletedAt))).then((rows) => rows[0] ?? null);
   if (!product) return null;
 
@@ -152,7 +152,7 @@ function chunkIds(ids: string[]): string[][] {
   return chunks;
 }
 
-export async function getAllProducts(db: PgDb, filters?: ProductFilters) {
+export async function getAllProducts(db: AppDb, filters?: ProductFilters) {
   const conditions: ReturnType<typeof eq>[] = [];
   conditions.push(isNull(products.deletedAt) as any);
 
@@ -226,11 +226,11 @@ export async function getAllProducts(db: PgDb, filters?: ProductFilters) {
   }));
 }
 
-export async function getProductById(db: PgDb, productId: string) {
+export async function getProductById(db: AppDb, productId: string) {
   return buildProductDetail(db, productId);
 }
 
-export async function createProduct(db: PgDb, data: CreateProductData) {
+export async function createProduct(db: AppDb, data: CreateProductData) {
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
   const handle = normalizeHandle(data.handle, data.name, id);
@@ -268,7 +268,7 @@ export async function createProduct(db: PgDb, data: CreateProductData) {
   return buildProductDetail(db, id);
 }
 
-export async function updateProduct(db: PgDb, productId: string, data: UpdateProductData) {
+export async function updateProduct(db: AppDb, productId: string, data: UpdateProductData) {
   const updates: Record<string, unknown> = { updatedAt: new Date().toISOString() };
 
   if (data.name !== undefined) updates.name = data.name;
@@ -344,7 +344,7 @@ export async function updateProduct(db: PgDb, productId: string, data: UpdatePro
   return buildProductDetail(db, productId);
 }
 
-export async function deleteProduct(db: PgDb, productId: string) {
+export async function deleteProduct(db: AppDb, productId: string) {
   // Hard delete. Callers guarantee no orderProducts reference the product
   // (delete is refused with PRODUCT_HAS_ORDERS otherwise), so removing the
   // row outright is safe and frees the unique handle/sku for reuse — a
@@ -365,7 +365,7 @@ export async function deleteProduct(db: PgDb, productId: string) {
  * constraint violation (500).
  */
 export async function findProductIdentityConflict(
-  db: PgDb,
+  db: AppDb,
   identity: { handle?: string; sku?: string },
 ): Promise<{ field: "handle" | "sku"; existingId: string; deleted: boolean } | null> {
   const conditions = [];
@@ -390,7 +390,7 @@ export async function findProductIdentityConflict(
   return { field, existingId: row.id, deleted: row.deletedAt !== null };
 }
 
-export async function getProductImages(db: PgDb, productId: string) {
+export async function getProductImages(db: AppDb, productId: string) {
   return db
     .select()
     .from(productImages)

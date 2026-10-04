@@ -1,6 +1,6 @@
 import { eq, and, ilike, sql } from "drizzle-orm";
-import { customerTags, customerTagAssignments, customers } from "../db/schema.pg";
-import type { PgDb } from "../db/client.pg";
+import { customerTags, customerTagAssignments, customers } from "../db/schema";
+import type { AppDb } from "../db/client";
 
 export interface CustomerTagFilters {
   search?: string;
@@ -18,7 +18,7 @@ export interface UpdateCustomerTagData {
   color?: string;
 }
 
-export async function getAllTags(db: PgDb, filters?: CustomerTagFilters) {
+export async function getAllTags(db: AppDb, filters?: CustomerTagFilters) {
   const conditions = [];
   if (filters?.search) {
     conditions.push(ilike(customerTags.name, `%${filters.search}%`));
@@ -39,7 +39,7 @@ export async function getAllTags(db: PgDb, filters?: CustomerTagFilters) {
   return await db.select().from(customerTags).limit(limit).offset(offset);
 }
 
-export async function getTagById(db: PgDb, tagId: string) {
+export async function getTagById(db: AppDb, tagId: string) {
   return await db
     .select()
     .from(customerTags)
@@ -47,7 +47,7 @@ export async function getTagById(db: PgDb, tagId: string) {
     .then((rows) => rows[0] ?? null);
 }
 
-export async function getTagWithCustomers(db: PgDb, tagId: string) {
+export async function getTagWithCustomers(db: AppDb, tagId: string) {
   const tag = await getTagById(db, tagId);
   if (!tag) return null;
 
@@ -69,7 +69,7 @@ export async function getTagWithCustomers(db: PgDb, tagId: string) {
   return { ...tag, customers: assigned };
 }
 
-export async function createTag(db: PgDb, data: CreateCustomerTagData) {
+export async function createTag(db: AppDb, data: CreateCustomerTagData) {
   const now = new Date().toISOString();
   const tagId = crypto.randomUUID();
 
@@ -86,7 +86,7 @@ export async function createTag(db: PgDb, data: CreateCustomerTagData) {
 }
 
 export async function updateTag(
-  db: PgDb,
+  db: AppDb,
   tagId: string,
   data: UpdateCustomerTagData,
 ) {
@@ -99,11 +99,11 @@ export async function updateTag(
   return getTagById(db, tagId);
 }
 
-export async function deleteTag(db: PgDb, tagId: string) {
+export async function deleteTag(db: AppDb, tagId: string) {
   await db.delete(customerTags).where(eq(customerTags.id, tagId));
 }
 
-export async function assignTag(db: PgDb, tagId: string, customerId: string) {
+export async function assignTag(db: AppDb, tagId: string, customerId: string) {
   const now = new Date().toISOString();
 
   await db
@@ -123,7 +123,7 @@ export async function assignTag(db: PgDb, tagId: string, customerId: string) {
     .where(eq(customerTags.id, tagId));
 }
 
-export async function unassignTag(db: PgDb, tagId: string, customerId: string) {
+export async function unassignTag(db: AppDb, tagId: string, customerId: string) {
   await db
     .delete(customerTagAssignments)
     .where(

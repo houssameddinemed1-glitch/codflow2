@@ -11,12 +11,12 @@
  * would leave the browser firing at the page's pixel with no server mirror
  * behind it â€” a measurement failure caused by a merchant editing a label.
  */
-import type { PgDb } from "../db/client.pg";
-import { landingPagePixelConfig, capiEventLog, orders } from "../db/schema.pg";
+import type { AppDb } from "../db/client";
+import { landingPagePixelConfig, capiEventLog, orders } from "../db/schema";
 import { eq, desc } from "drizzle-orm";
 import type { ConversionEvent } from "./pixel-config";
 
-export async function getLandingPageTracking(db: PgDb, landingPageId: string) {
+export async function getLandingPageTracking(db: AppDb, landingPageId: string) {
   return db
     .select()
     .from(landingPagePixelConfig)
@@ -37,7 +37,7 @@ export interface UpsertLandingPageTrackingData {
 }
 
 export async function upsertLandingPageTracking(
-  db: PgDb,
+  db: AppDb,
   landingPageId: string,
   data: UpsertLandingPageTrackingData,
 ) {
@@ -90,7 +90,7 @@ export async function upsertLandingPageTracking(
 }
 
 /** Return the page to the store pixel. */
-export async function deleteLandingPageTracking(db: PgDb, landingPageId: string) {
+export async function deleteLandingPageTracking(db: AppDb, landingPageId: string) {
   await db
     .delete(landingPagePixelConfig)
     .where(eq(landingPagePixelConfig.landingPageId, landingPageId));
@@ -110,7 +110,7 @@ export async function deleteLandingPageTracking(db: PgDb, landingPageId: string)
  * `orders.landing_page_id` is indexed (migration 0019), so this is a keyed
  * lookup rather than a scan.
  */
-export async function lastCapiEventForLandingPage(db: PgDb, landingPageId: string) {
+export async function lastCapiEventForLandingPage(db: AppDb, landingPageId: string) {
   return db
     .select({
       eventName: capiEventLog.eventName,

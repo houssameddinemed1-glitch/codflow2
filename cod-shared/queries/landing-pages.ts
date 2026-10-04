@@ -16,8 +16,8 @@ import {
   orders,
   products,
   stores,
-} from "../db/schema.pg";
-import type { PgDb } from "../db/client.pg";
+} from "../db/schema";
+import type { AppDb } from "../db/client";
 
 export interface LandingPageStats {
   views: number;
@@ -100,7 +100,7 @@ export interface LandingPageListPagination {
 }
 
 async function resolveListRow(
-  db: PgDb,
+  db: AppDb,
   filters: { productId?: string; status?: "draft" | "published" | "archived" } = {},
   pagination: LandingPageListPagination = {},
 ): Promise<LandingPageListItem[]> {
@@ -178,14 +178,14 @@ async function resolveListRow(
 }
 
 export async function listLandingPages(
-  db: PgDb,
+  db: AppDb,
   filters: { productId?: string; status?: "draft" | "published" | "archived" } = {},
   pagination: LandingPageListPagination = {},
 ) {
   return resolveListRow(db, filters, pagination);
 }
 
-export async function getLandingPageStats(db: PgDb, id: string): Promise<LandingPageStats | null> {
+export async function getLandingPageStats(db: AppDb, id: string): Promise<LandingPageStats | null> {
   const row = await db
     .select({
       views: landingPages.views,
@@ -214,7 +214,7 @@ export function generateLandingPageSlug(): string {
  *      call to D1 instead of three parallel-but-separate queries. Used by
  *      every REST detail read and every MCP write tool's post-mutation read.
  */
-export async function getLandingPageById(db: PgDb, id: string) {
+export async function getLandingPageById(db: AppDb, id: string) {
   const row = await db
     .select()
     .from(landingPages)
@@ -275,7 +275,7 @@ export async function getLandingPageById(db: PgDb, id: string) {
  *      call to D1 (batched statements), instead of re-selecting the row by
  *      id and issuing four more queries.
  */
-export async function getLandingPageDetailBySlug(db: PgDb, slug: string) {
+export async function getLandingPageDetailBySlug(db: AppDb, slug: string) {
   const row = await db
     .select()
     .from(landingPages)
@@ -329,7 +329,7 @@ export async function getLandingPageDetailBySlug(db: PgDb, slug: string) {
   };
 }
 
-export async function getLandingPageBySlug(db: PgDb, slug: string) {
+export async function getLandingPageBySlug(db: AppDb, slug: string) {
   const row = await db
     .select()
     .from(landingPages)
@@ -340,7 +340,7 @@ export async function getLandingPageBySlug(db: PgDb, slug: string) {
 }
 
 export async function createLandingPage(
-  db: PgDb,
+  db: AppDb,
   data: CreateLandingPageData,
 ): Promise<{ id: string; slug: string }> {
   const id = crypto.randomUUID();
@@ -370,7 +370,7 @@ export async function createLandingPage(
 }
 
 export async function updateLandingPage(
-  db: PgDb,
+  db: AppDb,
   id: string,
   data: UpdateLandingPageData,
 ) {
@@ -388,7 +388,7 @@ export async function updateLandingPage(
     .where(eq(landingPages.id, id));
 }
 
-export async function publishLandingPage(db: PgDb, id: string) {
+export async function publishLandingPage(db: AppDb, id: string) {
   const now = new Date().toISOString();
   await db
     .update(landingPages)
@@ -396,7 +396,7 @@ export async function publishLandingPage(db: PgDb, id: string) {
     .where(eq(landingPages.id, id));
 }
 
-export async function unpublishLandingPage(db: PgDb, id: string) {
+export async function unpublishLandingPage(db: AppDb, id: string) {
   const now = new Date().toISOString();
   await db
     .update(landingPages)
@@ -404,7 +404,7 @@ export async function unpublishLandingPage(db: PgDb, id: string) {
     .where(eq(landingPages.id, id));
 }
 
-export async function archiveLandingPage(db: PgDb, id: string) {
+export async function archiveLandingPage(db: AppDb, id: string) {
   const now = new Date().toISOString();
   await db
     .update(landingPages)
@@ -413,7 +413,7 @@ export async function archiveLandingPage(db: PgDb, id: string) {
 }
 
 /** Count orders attributed to a landing page — powers the delete guard. */
-export async function countLandingPageOrders(db: PgDb, id: string): Promise<number> {
+export async function countLandingPageOrders(db: AppDb, id: string): Promise<number> {
   const row = await db
     .select({ c: count() })
     .from(orders)
@@ -422,13 +422,13 @@ export async function countLandingPageOrders(db: PgDb, id: string): Promise<numb
   return Number(row?.c ?? 0);
 }
 
-export async function deleteLandingPage(db: PgDb, id: string) {
+export async function deleteLandingPage(db: AppDb, id: string) {
   // Images cascade at the DB level; orders must be absent (guarded by the caller).
   await db.delete(landingPages).where(eq(landingPages.id, id));
 }
 
 export async function addLandingPageImage(
-  db: PgDb,
+  db: AppDb,
   landingPageId: string,
   image: LandingPageImageInput,
 ) {
@@ -458,7 +458,7 @@ export async function addLandingPageImage(
   return getLandingPageImages(db, landingPageId);
 }
 
-export async function getLandingPageImages(db: PgDb, landingPageId: string) {
+export async function getLandingPageImages(db: AppDb, landingPageId: string) {
   return db
     .select()
     .from(landingPageImages)
@@ -468,7 +468,7 @@ export async function getLandingPageImages(db: PgDb, landingPageId: string) {
 }
 
 export async function getLandingPageImage(
-  db: PgDb,
+  db: AppDb,
   landingPageId: string,
   imageId: string,
 ) {
@@ -485,7 +485,7 @@ export async function getLandingPageImage(
 }
 
 export async function reorderLandingPageImages(
-  db: PgDb,
+  db: AppDb,
   landingPageId: string,
   imageIds: string[],
 ) {
@@ -514,7 +514,7 @@ export async function reorderLandingPageImages(
 }
 
 export async function deleteLandingPageImage(
-  db: PgDb,
+  db: AppDb,
   landingPageId: string,
   imageId: string,
 ) {
@@ -529,7 +529,7 @@ export async function deleteLandingPageImage(
 }
 
 /** Ordered product ids picked on a multi page (empty for single pages). */
-export async function getLandingPageProducts(db: PgDb, landingPageId: string) {
+export async function getLandingPageProducts(db: AppDb, landingPageId: string) {
   return db
     .select()
     .from(landingPageProducts)
@@ -544,7 +544,7 @@ export async function getLandingPageProducts(db: PgDb, landingPageId: string) {
  * caller's guard (cod-server wrapper), mirroring the image-reorder split.
  */
 export async function setLandingPageProducts(
-  db: PgDb,
+  db: AppDb,
   landingPageId: string,
   productIds: string[],
 ) {
@@ -573,7 +573,7 @@ export async function setLandingPageProducts(
 
 /** Append one pick at the end — a no-op when the product is already picked. */
 export async function addLandingPageProduct(
-  db: PgDb,
+  db: AppDb,
   landingPageId: string,
   productId: string,
 ) {
@@ -597,7 +597,7 @@ export async function addLandingPageProduct(
 }
 
 export async function removeLandingPageProduct(
-  db: PgDb,
+  db: AppDb,
   landingPageId: string,
   productId: string,
 ) {
@@ -612,7 +612,7 @@ export async function removeLandingPageProduct(
 }
 
 export async function reorderLandingPageProducts(
-  db: PgDb,
+  db: AppDb,
   landingPageId: string,
   productIds: string[],
 ) {
@@ -642,7 +642,7 @@ export async function reorderLandingPageProducts(
  * rendering after the first pick changes. Cover is otherwise immutable.
  */
 export async function updateLandingPageCover(
-  db: PgDb,
+  db: AppDb,
   id: string,
   productId: string,
 ) {
@@ -654,7 +654,7 @@ export async function updateLandingPageCover(
 
 /** Ordered (handle) refs of a multi page's picks — the storefront resolves full shapes per handle. */
 export async function getLandingPagePickHandles(
-  db: PgDb,
+  db: AppDb,
   landingPageId: string,
 ): Promise<string[]> {
   const rows = await db
@@ -668,7 +668,7 @@ export async function getLandingPagePickHandles(
 
 /** Landing pages that still exist and are published — the attribution-resolvable set. */
 export async function findPublishedLandingPageIdBySlug(
-  db: PgDb,
+  db: AppDb,
   slug: string,
 ): Promise<string | null> {
   const row = await db
@@ -680,7 +680,7 @@ export async function findPublishedLandingPageIdBySlug(
 }
 
 /** Comparison view source: every LP of one product with its stats, newest first. */
-export async function compareLandingPages(db: PgDb, productId: string) {
+export async function compareLandingPages(db: AppDb, productId: string) {
   return resolveListRow(db, { productId });
 }
 
@@ -693,7 +693,7 @@ export async function compareLandingPages(db: PgDb, productId: string) {
  * Attribution, views, and published state are NEVER copied — a duplicate is
  * a fresh creative test, not a stats clone.
  */
-export async function duplicateLandingPage(db: PgDb, id: string): Promise<string | null> {
+export async function duplicateLandingPage(db: AppDb, id: string): Promise<string | null> {
   const source = await db
     .select()
     .from(landingPages)
@@ -768,7 +768,7 @@ export async function duplicateLandingPage(db: PgDb, id: string): Promise<string
  * same immutable R2 object).
  */
 export async function countOtherLandingPageImageReferences(
-  db: PgDb,
+  db: AppDb,
   r2Key: string,
   excludeImageId: string,
 ): Promise<number> {
@@ -780,7 +780,7 @@ export async function countOtherLandingPageImageReferences(
   return Number(row?.c ?? 0);
 }
 
-export async function slugExists(db: PgDb, slug: string): Promise<boolean> {
+export async function slugExists(db: AppDb, slug: string): Promise<boolean> {
   const row = await db
     .select({ id: landingPages.id })
     .from(landingPages)
@@ -793,7 +793,7 @@ export async function slugExists(db: PgDb, slug: string): Promise<boolean> {
  * Atomic view increment — one UPDATE per render, no read-modify-write race.
  * Called by the public store endpoint for published pages only.
  */
-export async function incrementLandingPageViews(db: PgDb, id: string): Promise<void> {
+export async function incrementLandingPageViews(db: AppDb, id: string): Promise<void> {
   await db
     .update(landingPages)
     .set({ views: sql`${landingPages.views} + 1` })
@@ -813,7 +813,7 @@ export async function incrementLandingPageViews(db: PgDb, id: string): Promise<v
  * https is always assumed; the domain is stored as a bare hostname.
  */
 export async function resolveStorefrontBaseUrl(
-  db: PgDb,
+  db: AppDb,
   fallbackUrl?: string,
 ): Promise<string | null> {
   const store = await db
@@ -845,7 +845,7 @@ export interface LpImageUploadJobResult {
 
 /** Insert a `processing` upload job row. Id is the `lpimg-<hex>` job id. */
 export async function createLpImageUploadJob(
-  db: PgDb,
+  db: AppDb,
   job: { id: string; landingPageId: string; r2Key: string },
 ): Promise<void> {
   const now = new Date().toISOString();
@@ -859,7 +859,7 @@ export async function createLpImageUploadJob(
   });
 }
 
-export async function getLpImageUploadJob(db: PgDb, id: string) {
+export async function getLpImageUploadJob(db: AppDb, id: string) {
   return db
     .select()
     .from(lpImageUploadJobs)
@@ -868,7 +868,7 @@ export async function getLpImageUploadJob(db: PgDb, id: string) {
 }
 
 export async function markLpImageUploadComplete(
-  db: PgDb,
+  db: AppDb,
   id: string,
   result: LpImageUploadJobResult,
 ): Promise<void> {
@@ -889,7 +889,7 @@ export async function markLpImageUploadComplete(
 }
 
 export async function markLpImageUploadFailed(
-  db: PgDb,
+  db: AppDb,
   id: string,
   error: string,
 ): Promise<void> {

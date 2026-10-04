@@ -10,8 +10,8 @@
  */
 
 import { eq, and, ilike, or, count, sql, desc, exists, inArray } from "drizzle-orm";
-import { drivers, driverCompensations, wilayas, orders } from "../db/schema.pg";
-import type { PgDb } from "../db/client.pg";
+import { drivers, driverCompensations, wilayas, orders } from "../db/schema";
+import type { AppDb } from "../db/client";
 import { safeLikeTerm } from "./search";
 
 export interface DriverFilters {
@@ -42,7 +42,7 @@ export interface UpdateDriverData {
   notes?: string | null;
 }
 
-export async function getAllDrivers(db: PgDb, filters?: DriverFilters) {
+export async function getAllDrivers(db: AppDb, filters?: DriverFilters) {
   const conditions = [];
 
   if (filters?.status) {
@@ -110,7 +110,7 @@ export async function getAllDrivers(db: PgDb, filters?: DriverFilters) {
  * drift ≠ 0 means the ledger and reality disagree — damage from an old bug,
  * a manual D1 edit, or a mid-settlement failure. Surfaced so ops can see it.
  */
-export async function getDriverCashReconciliation(db: PgDb, driverId: string) {
+export async function getDriverCashReconciliation(db: AppDb, driverId: string) {
   const [driverRow, pendingRow] = await Promise.all([
     db
       .select({ pendingCash: drivers.pendingCash })
@@ -145,7 +145,7 @@ export async function getDriverCashReconciliation(db: PgDb, driverId: string) {
   };
 }
 
-export async function getDriverById(db: PgDb, driverId: string) {
+export async function getDriverById(db: AppDb, driverId: string) {
   const driver = await db
     .select()
     .from(drivers)
@@ -182,7 +182,7 @@ export async function getDriverById(db: PgDb, driverId: string) {
   };
 }
 
-export async function createDriver(db: PgDb, data: CreateDriverData) {
+export async function createDriver(db: AppDb, data: CreateDriverData) {
   // Check for duplicate phone number
   const existingDriver = await db
     .select({ id: drivers.id, phone: drivers.phone })
@@ -217,7 +217,7 @@ export async function createDriver(db: PgDb, data: CreateDriverData) {
   return getDriverById(db, id);
 }
 
-export async function updateDriver(db: PgDb, driverId: string, data: UpdateDriverData) {
+export async function updateDriver(db: AppDb, driverId: string, data: UpdateDriverData) {
   const existing = await getDriverById(db, driverId);
   if (!existing) return null;
 
@@ -245,7 +245,7 @@ export async function updateDriver(db: PgDb, driverId: string, data: UpdateDrive
 }
 
 export async function updateDriverStatus(
-  db: PgDb,
+  db: AppDb,
   driverId: string,
   status: "available" | "busy" | "inactive",
 ) {
@@ -275,7 +275,7 @@ export interface DriverCompensationRow {
  * This is the shape the admin grid needs — always 58 rows, sparse overlay.
  */
 export async function getCompensationsForDriver(
-  db: PgDb,
+  db: AppDb,
   driverId: string,
 ): Promise<DriverCompensationRow[]> {
   const allWilayas = await db
@@ -301,7 +301,7 @@ export async function getCompensationsForDriver(
 }
 
 export async function setCompensation(
-  db: PgDb,
+  db: AppDb,
   driverId: string,
   wilayaId: number,
   feePerDelivery: number,
@@ -348,7 +348,7 @@ export async function setCompensation(
 }
 
 export async function deleteCompensation(
-  db: PgDb,
+  db: AppDb,
   driverId: string,
   wilayaId: number,
 ): Promise<boolean> {

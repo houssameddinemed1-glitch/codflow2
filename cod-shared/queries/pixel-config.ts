@@ -1,10 +1,10 @@
-import type { PgDb } from "../db/client.pg";
-import { storePixelConfig } from "../db/schema.pg";
+import type { AppDb } from "../db/client";
+import { storePixelConfig } from "../db/schema";
 import { eq } from "drizzle-orm";
 
 export type ConversionEvent = "Purchase" | "Purchase_Confirmed" | "Purchase_Delivered" | "Lead";
 
-export async function getPixelConfig(db: PgDb, storeId?: string) {
+export async function getPixelConfig(db: AppDb, storeId?: string) {
   if (storeId) {
     return db
       .select()
@@ -33,7 +33,7 @@ export interface UpsertPixelConfigData {
 }
 
 export async function upsertPixelConfig(
-  db: PgDb,
+  db: AppDb,
   storeId: string,
   data: UpsertPixelConfigData,
 ) {

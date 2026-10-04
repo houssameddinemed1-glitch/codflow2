@@ -6,14 +6,14 @@
  */
 
 import { eq, ilike, asc, or } from "drizzle-orm";
-import { wilayas, communes } from "../db/schema.pg";
-import type { PgDb } from "../db/client.pg";
+import { wilayas, communes } from "../db/schema";
+import type { AppDb } from "../db/client";
 
 export interface WilayaFilters {
   search?: string;
 }
 
-export async function getAllWilayas(db: PgDb, filters?: WilayaFilters) {
+export async function getAllWilayas(db: AppDb, filters?: WilayaFilters) {
   if (filters?.search) {
     return await db
       .select()
@@ -26,11 +26,11 @@ export async function getAllWilayas(db: PgDb, filters?: WilayaFilters) {
   return await db.select().from(wilayas).orderBy(asc(wilayas.id));
 }
 
-export async function getWilayaById(db: PgDb, id: number) {
+export async function getWilayaById(db: AppDb, id: number) {
   return await db.select().from(wilayas).where(eq(wilayas.id, id)).then((rows) => rows[0] ?? null);
 }
 
-export async function getCommunesByWilaya(db: PgDb, wilayaId: number) {
+export async function getCommunesByWilaya(db: AppDb, wilayaId: number) {
   return await db
     .select()
     .from(communes)

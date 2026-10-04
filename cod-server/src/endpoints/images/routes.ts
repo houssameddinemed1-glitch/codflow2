@@ -3,12 +3,13 @@
  *
  * Two routers, two different worlds (both mounted in src/index.ts):
  *   - uploadRouter → /api/images/*   (auth + `products:manage` scope)
- *       POST /upload         — multipart upload straight to Blob
- *       POST /blob-callback  — token endpoint for @vercel/blob/client
- *                              direct browser uploads (bypasses the function)
+ *       POST /upload         — multipart upload straight to R2
+ *       POST /presign         — R2 presigned PUT for direct browser uploads
+ *                              (bypasses the function body cap)
  *
  *   - serveRouter   → /images/:key{.+}  (public, no auth)
- *       301 redirects to the Blob CDN URL. Deliberately kept on plain Hono:
+ *       301 redirects to the MEDIA_DOMAIN custom domain, or streams bytes
+ *       from R2 when unset. Deliberately kept on plain Hono:
  *       the route needs Hono's regex param (`:key{.+}`) so keys with slashes
  *       match, which cannot be expressed in a @hono/zod-openapi createRoute
  *       path. Its documentation is preserved as a legacy path entry in
@@ -26,7 +27,7 @@ import { defineRoute } from "@/lib/route-builder";
 import { requireScope } from "@/rbac/middleware";
 import { SCOPES } from "../../../../cod-shared/rbac/scopes";
 import * as h from "./handlers";
-import { handleBlobUpload } from "./presign";
+import { presignUpload, presignRequestSchema } from "./presign";
 import {
   UploadedImageSchema,
   SuccessResponseSchema,
@@ -45,7 +46,7 @@ const uploadImageRoute = defineRoute({
   tags: ["Images"],
   summary: "Upload image",
   description:
-    "Upload an image file (jpg, png, webp, gif) to Blob storage. Max 10 MB. Content type must be multipart/form-data with a single `file` field.",
+    "Upload an image file (jpg, png, webp, gif) to R2 storage. Max 10 MB. Content type must be multipart/form-data with a single `file` field.",
   operationId: "uploadImage",
   bodyContent: {
     "multipart/form-data": {
@@ -74,12 +75,12 @@ const uploadImageRoute = defineRoute({
 export const uploadRouter = new OpenAPIHono<AppContext>();
 uploadRouter.openapi(uploadImageRoute.route, uploadImageRoute.handler);
 
-// Token endpoint for @vercel/blob/client direct uploads. Plain Hono (not an
-// OpenAPI route): the SDK drives the request/response shapes, and the route
-// carries its own scope middleware. Mounted in index.ts next to uploadRouter.
-export const callbackRouter = new Hono<AppContext>();
-callbackRouter.post("/blob-callback", requireScope(SCOPES.PRODUCTS_MANAGE), (c) =>
-  handleBlobUpload(c),
+// Token endpoint for R2 direct browser uploads. Plain Hono (not an
+// OpenAPI route): the browser PUTs bytes straight to R2 with the minted URL.
+// Mounted in index.ts next to uploadRouter.
+export const presignRouter = new Hono<AppContext>();
+presignRouter.post("/presign", requireScope(SCOPES.PRODUCTS_MANAGE), (c) =>
+  presignUpload(c),
 );
 
 // Serve route — no auth, mounted outside /api/*

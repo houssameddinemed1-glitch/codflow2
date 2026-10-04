@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { getDb } from "@/db";
+import type { AppDb } from "@/db";
 import { orders, orderProducts, stores, tiktokEventLog } from "@/db/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { getTiktokConfig } from "../../../cod-shared/queries/tiktok-config";
@@ -33,7 +33,7 @@ export type TiktokRunResult =
  * Throws on send failure so QStash retries (5x); every early exit returns
  * skipped (no retry). The claim row + in-flight guard keep redeliveries safe.
  */
-export async function runTiktokEvent(raw: unknown): Promise<TiktokRunResult> {
+export async function runTiktokEvent(db: AppDb, raw: unknown): Promise<TiktokRunResult> {
   const parsed = CodTiktokParamsSchema.safeParse(raw);
   if (!parsed.success) {
     const errorMsg = parsed.error.issues.map((e) => `${e.path.join(".")}: ${e.message}`).join(", ");
@@ -41,7 +41,6 @@ export async function runTiktokEvent(raw: unknown): Promise<TiktokRunResult> {
   }
 
   const { orderId, eventName, stage, triggeredAt, eventSourceUrl } = parsed.data;
-  const db = getDb();
 
   const order = await db
     .select({
@@ -175,7 +174,7 @@ export async function runTiktokEvent(raw: unknown): Promise<TiktokRunResult> {
     });
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
-    await db.execute(
+    await db.run(
       sql`UPDATE tiktok_event_log
           SET status = 'failed', error = ${errorMsg}, sent_at = ${now}
           WHERE order_id = ${orderId} AND stage = ${stage} AND event_name = ${eventName}`,
@@ -185,7 +184,7 @@ export async function runTiktokEvent(raw: unknown): Promise<TiktokRunResult> {
 
   const status = tiktokResult.success ? "sent" : "failed";
   const error = tiktokResult.error ?? null;
-  await db.execute(
+  await db.run(
     sql`UPDATE tiktok_event_log
         SET status = ${status}, error = ${error}, sent_at = ${now}
         WHERE order_id = ${orderId} AND stage = ${stage} AND event_name = ${eventName}`,

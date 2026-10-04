@@ -1,9 +1,7 @@
 /**
- * Route-level integration tests for the Images routers (Vercel Blob port).
- * Upload runs through the OpenAPIHono router; serve 301-redirects via plain
- * Hono. The S3 presign route is retired — direct browser uploads go through
- * POST /api/images/blob-callback (plain Hono, SDK-driven shapes, untestable
- * without the @vercel/blob client).
+ * Route-level integration tests for the Images routers (R2 port).
+ * Upload runs through the OpenAPIHono router; serve 301-redirects to the
+ * media domain (or streams bytes from R2) via plain Hono.
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
@@ -14,13 +12,14 @@ import { errorHandler } from "@/middleware/error";
 import { openApiValidationHook } from "@/openapi/validation-hook";
 import { ERROR_CODES } from "../../../../cod-shared/errors/codes";
 import { uploadRouter, serveRouter } from "./routes";
-import { blobPut, blobPublicUrl } from "@/lib/blob";
+import { blobPut, blobStream } from "@/lib/blob";
 
 vi.mock("@/lib/blob", () => ({
   blobPut: vi.fn(),
   blobDel: vi.fn(),
   blobContentType: vi.fn(),
   blobPublicUrl: vi.fn(),
+  blobStream: vi.fn(),
 }));
 
 function makeFile(name: string, type: string, size = 10) {
@@ -102,7 +101,7 @@ describe("Images routes", () => {
       expect(body.code).toBe(ERROR_CODES.FILE_TOO_LARGE);
     });
 
-    it("returns 500 when Blob storage fails", async () => {
+    it("returns 500 when R2 storage fails", async () => {
       vi.mocked(blobPut).mockRejectedValue(new Error("blob down"));
       const form = new FormData();
       form.append("file", makeFile("product.jpg", "image/jpeg"));
@@ -117,14 +116,17 @@ describe("Images routes", () => {
   });
 
   describe("GET /images/{key} (public serving)", () => {
-    it("301-redirects to the Blob CDN URL", async () => {
-      vi.mocked(blobPublicUrl).mockResolvedValue("https://blob.example.com/products/abc.jpg");
+    it("streams R2 bytes when no media domain is set", async () => {
+      vi.mocked(blobStream).mockResolvedValue({
+        bytes: new Uint8Array([9, 9, 9]).buffer,
+        contentType: "image/jpeg",
+        etag: "xyz",
+      });
 
       const res = await app.request("/images/products/abc.jpg");
 
-      expect(res.status).toBe(301);
-      expect(res.headers.get("Location")).toBe("https://blob.example.com/products/abc.jpg");
-      expect(blobPublicUrl).toHaveBeenCalledWith("products/abc.jpg");
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Content-Type")).toBe("image/jpeg");
     });
 
     it("rejects path traversal keys with 400", async () => {
@@ -136,7 +138,7 @@ describe("Images routes", () => {
     });
 
     it("returns 404 when the object does not exist", async () => {
-      vi.mocked(blobPublicUrl).mockResolvedValue(null);
+      vi.mocked(blobStream).mockResolvedValue(null);
 
       const res = await app.request("/images/products/missing.jpg");
 

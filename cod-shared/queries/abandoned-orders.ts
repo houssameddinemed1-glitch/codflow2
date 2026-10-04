@@ -3,8 +3,8 @@
  */
 
 import { eq, and, desc, lt, sql, ilike, or, inArray, ne } from "drizzle-orm";
-import { abandonedOrders, wilayas, communes } from "../db/schema.pg";
-import type { PgDb } from "../db/client.pg";
+import { abandonedOrders, wilayas, communes } from "../db/schema";
+import type { AppDb } from "../db/client";
 import { safeLikeTerm } from "./search";
 
 /** Normalize an Algerian mobile to canonical local form (0[567]XXXXXXXX), or null. */
@@ -165,7 +165,7 @@ export interface AbandonedOrderFilters {
 }
 
 export async function upsertAbandonedOrder(
-  db: PgDb,
+  db: AppDb,
   data: UpsertAbandonedOrderData
 ): Promise<string> {
   const now = new Date().toISOString();
@@ -224,7 +224,7 @@ export async function upsertAbandonedOrder(
 }
 
 export async function markAbandonedOrderConverted(
-  db: PgDb,
+  db: AppDb,
   sessionId: string,
   orderId: string,
   orderNumber: string
@@ -280,7 +280,7 @@ export async function markAbandonedOrderConverted(
  * callers wrap it in try/catch.
  */
 export async function reconcileAbandonedOrdersOnOrder(
-  db: PgDb,
+  db: AppDb,
   phone: string,
   orderId: string,
   orderNumber: string
@@ -347,7 +347,7 @@ export async function reconcileAbandonedOrdersOnOrder(
  * any pending/abandoned sibling — one shopper, one status. Returns the
  * number of rows purged.
  */
-export async function purgeStaleAbandonedSiblings(db: PgDb): Promise<number> {
+export async function purgeStaleAbandonedSiblings(db: AppDb): Promise<number> {
   const convertedPhones = await db
     .selectDistinct({ phone: abandonedOrders.phone })
     .from(abandonedOrders)
@@ -370,7 +370,7 @@ export async function purgeStaleAbandonedSiblings(db: PgDb): Promise<number> {
 }
 
 /** Cron: flip pending → abandoned for records older than 30 minutes. Returns count. */
-export async function sweepPendingToAbandoned(db: PgDb): Promise<number> {
+export async function sweepPendingToAbandoned(db: AppDb): Promise<number> {
   const now = new Date().toISOString();
   const cutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
 
@@ -389,7 +389,7 @@ export async function sweepPendingToAbandoned(db: PgDb): Promise<number> {
 }
 
 export async function listAbandonedOrders(
-  db: PgDb,
+  db: AppDb,
   filters: AbandonedOrderFilters = {}
 ) {
   const { status, search, limit = 50, offset = 0 } = filters;
@@ -432,7 +432,7 @@ export async function listAbandonedOrders(
   return { rows: withItems, total: countRows[0]?.count ?? 0 };
 }
 
-export async function getAbandonedOrderStats(db: PgDb) {
+export async function getAbandonedOrderStats(db: AppDb) {
   const [totalRows, convertedRows, revenueRows] = await Promise.all([
     db
       .select({ count: sql<number>`count(*)` })
@@ -459,7 +459,7 @@ export async function getAbandonedOrderStats(db: PgDb) {
 }
 
 export async function updateAbandonedOrderStatus(
-  db: PgDb,
+  db: AppDb,
   id: string,
   status: (typeof abandonedOrders.$inferSelect)["status"]
 ): Promise<void> {
@@ -470,6 +470,6 @@ export async function updateAbandonedOrderStatus(
     .where(eq(abandonedOrders.id, id));
 }
 
-export async function deleteAbandonedOrder(db: PgDb, id: string): Promise<void> {
+export async function deleteAbandonedOrder(db: AppDb, id: string): Promise<void> {
   await db.delete(abandonedOrders).where(eq(abandonedOrders.id, id));
 }

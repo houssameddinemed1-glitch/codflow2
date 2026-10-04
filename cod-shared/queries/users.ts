@@ -7,8 +7,8 @@
  */
 
 import { eq, and, ilike, or } from "drizzle-orm";
-import { users, userScopes } from "../db/schema.pg";
-import type { PgDb } from "../db/client.pg";
+import { users, userScopes } from "../db/schema";
+import type { AppDb } from "../db/client";
 
 export interface UserFilters {
   role?: "admin" | "staff";
@@ -27,7 +27,7 @@ function sanitize<T extends { apiKey: string | null }>(user: T): Omit<T, "apiKey
   return safe as Omit<T, "apiKey">;
 }
 
-export async function getAllUsers(db: PgDb, filters?: UserFilters) {
+export async function getAllUsers(db: AppDb, filters?: UserFilters) {
   const conditions = [];
 
   if (filters?.role) {
@@ -89,7 +89,7 @@ export async function getAllUsers(db: PgDb, filters?: UserFilters) {
   return usersWithScopes;
 }
 
-export async function getUserById(db: PgDb, userId: string) {
+export async function getUserById(db: AppDb, userId: string) {
   const user = await db
     .select()
     .from(users)
@@ -120,7 +120,7 @@ export async function getUserById(db: PgDb, userId: string) {
  * Returns the new raw key — store it securely, it will not be retrievable again.
  */
 export async function rotateApiKey(
-  db: PgDb,
+  db: AppDb,
   userId: string,
 ): Promise<{ apiKey: string }> {
   const apiKey = `cod_${crypto.randomUUID().replace(/-/g, "")}`;

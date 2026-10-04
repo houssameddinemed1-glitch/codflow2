@@ -556,6 +556,16 @@ export const orders = sqliteTable("orders", {
    * against the live policy. Carriers and pricing never read it.
    */
   customFieldsJson: text("custom_fields_json"),
+  /** TikTok click ID captured at placement — sent with TikTok events. */
+  ttclid: text("ttclid"),
+  /** TikTok pixel cookie captured at placement. */
+  ttp: text("ttp"),
+  /** UTM source captured at placement. */
+  utmSource: text("utm_source"),
+  /** UTM medium captured at placement. */
+  utmMedium: text("utm_medium"),
+  /** UTM campaign captured at placement. */
+  utmCampaign: text("utm_campaign"),
 });
 
 export const orderAssignments = sqliteTable("order_assignments", {
@@ -1293,6 +1303,31 @@ export const landingPageProducts = sqliteTable("landing_page_products", {
     .references(() => products.id),
   position: integer("position").notNull().default(1),
   createdAt: text("created_at").notNull(),
+});
+
+/**
+ * Background landing-page AI image uploads (QStash-driven).
+ * The upload tool inserts a `processing` row; the runner flips it to
+ * `complete` or `failed`. Rows are keyed by the `lpimg-<hex>` job id.
+ */
+export const lpImageUploadJobs = sqliteTable("lp_image_upload_jobs", {
+  id: text("id").primaryKey(),
+  landingPageId: text("landing_page_id")
+    .notNull()
+    .references(() => landingPages.id, { onDelete: "cascade" }),
+  r2Key: text("r2_key").notNull(),
+  status: text("status", { enum: ["processing", "complete", "failed"] })
+    .notNull()
+    .default("processing"),
+  error: text("error"),
+  imageId: text("image_id"),
+  src: text("src"),
+  position: integer("position"),
+  width: integer("width"),
+  height: integer("height"),
+  altText: text("alt_text"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
 });
 
 // ─── Dashboard branding ───────────────────────────────────────────────────────

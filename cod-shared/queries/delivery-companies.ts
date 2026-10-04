@@ -5,8 +5,8 @@
  */
 
 import { eq, and, ilike, desc, count, notInArray } from "drizzle-orm";
-import { deliveryCompanies, orders } from "../db/schema.pg";
-import type { PgDb } from "../db/client.pg";
+import { deliveryCompanies, orders } from "../db/schema";
+import type { AppDb } from "../db/client";
 
 export interface DeliveryCompanyFilters {
   active?: boolean;
@@ -58,7 +58,7 @@ function sanitize(company: typeof deliveryCompanies.$inferSelect) {
 }
 
 export async function getAllDeliveryCompanies(
-  db: PgDb,
+  db: AppDb,
   filters?: DeliveryCompanyFilters,
 ) {
   const conditions = [];
@@ -88,7 +88,7 @@ export async function getAllDeliveryCompanies(
   return rows.map(sanitize);
 }
 
-export async function getDeliveryCompanyById(db: PgDb, id: string) {
+export async function getDeliveryCompanyById(db: AppDb, id: string) {
   const row = await db
     .select()
     .from(deliveryCompanies)
@@ -97,7 +97,7 @@ export async function getDeliveryCompanyById(db: PgDb, id: string) {
   return row ? sanitize(row) : null;
 }
 
-export async function getDeliveryCompanyByCode(db: PgDb, code: string) {
+export async function getDeliveryCompanyByCode(db: AppDb, code: string) {
   return await db
     .select()
     .from(deliveryCompanies)
@@ -109,7 +109,7 @@ export async function getDeliveryCompanyByCode(db: PgDb, code: string) {
  * Internal: get raw company record including credentials. Used by providers/handlers
  * that need to make outbound API calls. Never returned to clients.
  */
-export async function getDeliveryCompanyRaw(db: PgDb, id: string) {
+export async function getDeliveryCompanyRaw(db: AppDb, id: string) {
   return await db
     .select()
     .from(deliveryCompanies)
@@ -118,7 +118,7 @@ export async function getDeliveryCompanyRaw(db: PgDb, id: string) {
 }
 
 export async function createDeliveryCompany(
-  db: PgDb,
+  db: AppDb,
   data: CreateDeliveryCompanyData,
 ) {
   const now = new Date().toISOString();
@@ -150,7 +150,7 @@ export async function createDeliveryCompany(
 }
 
 export async function updateDeliveryCompany(
-  db: PgDb,
+  db: AppDb,
   id: string,
   data: UpdateDeliveryCompanyData,
 ) {
@@ -171,7 +171,7 @@ export async function updateDeliveryCompany(
  * Delete a delivery company by ID.
  * Throws if the company has active (non-terminal) orders assigned to it.
  */
-export async function deleteDeliveryCompany(db: PgDb, id: string) {
+export async function deleteDeliveryCompany(db: AppDb, id: string) {
   const liveOrders = await db
     .select({ count: count() })
     .from(orders)

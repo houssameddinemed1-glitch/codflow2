@@ -14,8 +14,8 @@
  * cod-server/src/endpoints/store-pages/queries.ts.
  */
 import { and, asc, eq, inArray } from "drizzle-orm";
-import { storePages, storePageTranslations, storeLegalProfile, stores } from "../db/schema.pg";
-import type { PgDb } from "../db/client.pg";
+import { storePages, storePageTranslations, storeLegalProfile, stores } from "../db/schema";
+import type { AppDb } from "../db/client";
 import { sanitizeRichText, toPlainText } from "../lib/rich-text";
 import {
   LEGAL_PAGE_KINDS,
@@ -132,7 +132,7 @@ export interface UpsertLegalProfileInput {
  * rather than trusted on the strength of where it came from.
  */
 async function writeTranslation(
-  db: PgDb,
+  db: AppDb,
   pageId: string,
   locale: PageLocale,
   input: SaveTranslationInput,
@@ -179,7 +179,7 @@ async function writeTranslation(
  * (plan D8). There is no path back to `"template"` except an explicit reset.
  */
 export async function saveTranslation(
-  db: PgDb,
+  db: AppDb,
   pageId: string,
   locale: PageLocale,
   input: SaveTranslationInput,
@@ -197,7 +197,7 @@ export async function saveTranslation(
  * template to reset to) or the store row cannot be found.
  */
 export async function resetTranslationToTemplate(
-  db: PgDb,
+  db: AppDb,
   storeId: string,
   pageId: string,
   locale: PageLocale,
@@ -248,7 +248,7 @@ export async function resetTranslationToTemplate(
  * someone merely looking.
  */
 export async function seedStorePages(
-  db: PgDb,
+  db: AppDb,
   storeId: string,
 ): Promise<{ created: LegalPageKind[] }> {
   const store = await db.select({ name: stores.name }).from(stores).where(eq(stores.id, storeId)).then((rows) => rows[0] ?? null);
@@ -305,7 +305,7 @@ export async function seedStorePages(
 }
 
 /** Appends `-2`, `-3`, â€¦ until the slug is free for this store. */
-async function uniqueSlug(db: PgDb, storeId: string, base: string): Promise<string> {
+async function uniqueSlug(db: AppDb, storeId: string, base: string): Promise<string> {
   if (!(await slugExists(db, storeId, base))) return base;
   for (let n = 2; n < 1000; n++) {
     const candidate = `${base}-${n}`;
@@ -317,7 +317,7 @@ async function uniqueSlug(db: PgDb, storeId: string, base: string): Promise<stri
 }
 
 export async function slugExists(
-  db: PgDb,
+  db: AppDb,
   storeId: string,
   slug: string,
   excludeId?: string,
@@ -333,7 +333,7 @@ export async function slugExists(
 // â”€â”€â”€ Reads â€” dashboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Every page for the merchant's Pages list, ordered the way the footer would show them. */
-export async function listStorePages(db: PgDb, storeId: string): Promise<StorePageSummary[]> {
+export async function listStorePages(db: AppDb, storeId: string): Promise<StorePageSummary[]> {
   const pages = await db
     .select()
     .from(storePages)
@@ -356,7 +356,7 @@ export async function listStorePages(db: PgDb, storeId: string): Promise<StorePa
 }
 
 export async function getStorePageById(
-  db: PgDb,
+  db: AppDb,
   storeId: string,
   id: string,
 ): Promise<StorePageDetail | null> {
@@ -426,7 +426,7 @@ function summarise(page: StorePageRow, translations: StorePageTranslationRow[]):
  * Â§9 â€” never a soft 200 with empty content).
  */
 export async function resolvePublishedPage(
-  db: PgDb,
+  db: AppDb,
   storeId: string,
   slug: string,
   locale: PageLocale,
@@ -477,7 +477,7 @@ export async function resolvePublishedPage(
  * an N+1 fallback query: `/store/config` runs on every page view.
  */
 export async function getFooterPages(
-  db: PgDb,
+  db: AppDb,
   storeId: string,
   locale: PageLocale,
 ): Promise<FooterPageEntry[]> {
@@ -509,7 +509,7 @@ export async function getFooterPages(
 // â”€â”€â”€ Custom pages â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function createCustomPage(
-  db: PgDb,
+  db: AppDb,
   storeId: string,
   input: CreateCustomPageInput,
 ): Promise<{ id: string; slug: string }> {
@@ -542,7 +542,7 @@ export async function createCustomPage(
 }
 
 export async function updateStorePageMeta(
-  db: PgDb,
+  db: AppDb,
   storeId: string,
   id: string,
   input: UpdateStorePageMetaInput,
@@ -561,14 +561,14 @@ export async function updateStorePageMeta(
 }
 
 /** Unconditional. The "custom kind only" guard is a server-layer concern (mirrors landing-pages' delete-with-orders split). */
-export async function deleteStorePage(db: PgDb, storeId: string, id: string): Promise<void> {
+export async function deleteStorePage(db: AppDb, storeId: string, id: string): Promise<void> {
   await db.delete(storePages).where(and(eq(storePages.id, id), eq(storePages.storeId, storeId)));
 }
 
 // â”€â”€â”€ Legal profile â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function getLegalProfile(
-  db: PgDb,
+  db: AppDb,
   storeId: string,
 ): Promise<StoreLegalProfileRow | undefined> {
   return db.select().from(storeLegalProfile).where(eq(storeLegalProfile.storeId, storeId)).then((rows) => rows[0] ?? null);
@@ -583,7 +583,7 @@ export interface PublicLegalContact {
 }
 
 export async function getPublicLegalContact(
-  db: PgDb,
+  db: AppDb,
   storeId: string,
 ): Promise<PublicLegalContact | null> {
   const row = await db
@@ -600,7 +600,7 @@ export async function getPublicLegalContact(
 }
 
 export async function upsertLegalProfile(
-  db: PgDb,
+  db: AppDb,
   storeId: string,
   input: UpsertLegalProfileInput,
 ): Promise<StoreLegalProfileRow> {

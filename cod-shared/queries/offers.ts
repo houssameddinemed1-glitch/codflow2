@@ -1,6 +1,6 @@
 import { eq, desc } from "drizzle-orm";
-import { offers, products, productVariants } from "../db/schema.pg";
-import type { PgDb } from "../db/client.pg";
+import { offers, products, productVariants } from "../db/schema";
+import type { AppDb } from "../db/client";
 
 export type OfferDiscountType = "free" | "free_shipping";
 export type OfferStatus = "active" | "inactive";
@@ -34,7 +34,7 @@ export interface UpdateOfferData {
 }
 
 async function resolveOfferDetail(
-  db: PgDb,
+  db: AppDb,
   offer: typeof offers.$inferSelect,
 ) {
   const [triggerProduct, rewardProduct] = await Promise.all([
@@ -101,7 +101,7 @@ async function resolveOfferDetail(
   };
 }
 
-export async function listOffers(db: PgDb) {
+export async function listOffers(db: AppDb) {
   const rows = await db
     .select()
     .from(offers)
@@ -111,7 +111,7 @@ export async function listOffers(db: PgDb) {
   return Promise.all(rows.map((row) => resolveOfferDetail(db, row)));
 }
 
-export async function getOfferById(db: PgDb, id: string) {
+export async function getOfferById(db: AppDb, id: string) {
   const offer = await db
     .select()
     .from(offers)
@@ -123,7 +123,7 @@ export async function getOfferById(db: PgDb, id: string) {
 }
 
 export async function createOffer(
-  db: PgDb,
+  db: AppDb,
   data: CreateOfferData,
 ): Promise<{ id: string }> {
   const id = crypto.randomUUID();
@@ -150,7 +150,7 @@ export async function createOffer(
 }
 
 export async function updateOffer(
-  db: PgDb,
+  db: AppDb,
   id: string,
   data: UpdateOfferData,
 ) {
@@ -187,6 +187,6 @@ export async function updateOffer(
     .where(eq(offers.id, id));
 }
 
-export async function deleteOffer(db: PgDb, id: string) {
+export async function deleteOffer(db: AppDb, id: string) {
   await db.delete(offers).where(eq(offers.id, id));
 }

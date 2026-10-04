@@ -17,7 +17,7 @@ import { reconcileAbandonedOrdersOnOrder } from "../../../../cod-shared/queries/
 import { resolveConversionForStage, getCapiWorkflowId } from "@/workflows/capi-helpers";
 import { resolveTiktokForStage, getTiktokWorkflowId } from "@/workflows/tiktok-conversion-model";
 import { publishWorkflow } from "@/lib/queue";
-import { stores, orders } from "../../../../cod-shared/db/schema.pg";
+import { stores, orders } from "../../../../cod-shared/db/schema";
 import { normalizeOrderLines, CartValidationError, type CartLine } from "../../../../cod-shared/queries/cart";
 import { loadCatalogSnapshot, resolveCartLines } from "../../../../cod-shared/queries/catalog-snapshot";
 import { resolveCartOffers } from "../../../../cod-shared/queries/offers-cart";

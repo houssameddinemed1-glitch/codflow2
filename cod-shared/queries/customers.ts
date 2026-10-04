@@ -15,8 +15,8 @@ import {
   customerTagAssignments,
   wilayas,
   communes,
-} from "../db/schema.pg";
-import type { PgDb } from "../db/client.pg";
+} from "../db/schema";
+import type { AppDb } from "../db/client";
 import { safeLikeTerm } from "./search";
 
 export interface CustomerFilters {
@@ -46,7 +46,7 @@ export interface UpdateCustomerData {
   address?: string | null;
 }
 
-export async function getAllCustomers(db: PgDb, filters?: CustomerFilters) {
+export async function getAllCustomers(db: AppDb, filters?: CustomerFilters) {
   const conditions = [];
 
   if (filters?.wilayaId) {
@@ -110,7 +110,7 @@ export async function getAllCustomers(db: PgDb, filters?: CustomerFilters) {
   return await db.select().from(customers).limit(limit).offset(offset);
 }
 
-export async function getCustomerById(db: PgDb, customerId: string) {
+export async function getCustomerById(db: AppDb, customerId: string) {
   const customer = await db
     .select()
     .from(customers)
@@ -135,7 +135,7 @@ export async function getCustomerById(db: PgDb, customerId: string) {
   };
 }
 
-export async function getCustomerByPhone(db: PgDb, phone: string) {
+export async function getCustomerByPhone(db: AppDb, phone: string) {
   return await db
     .select()
     .from(customers)
@@ -143,7 +143,7 @@ export async function getCustomerByPhone(db: PgDb, phone: string) {
     .then((rows) => rows[0] ?? null);
 }
 
-export async function createCustomer(db: PgDb, customerData: CreateCustomerData) {
+export async function createCustomer(db: AppDb, customerData: CreateCustomerData) {
   const now = new Date().toISOString();
   const customerId = crypto.randomUUID();
 
@@ -185,7 +185,7 @@ export async function createCustomer(db: PgDb, customerData: CreateCustomerData)
 }
 
 export async function updateCustomer(
-  db: PgDb,
+  db: AppDb,
   customerId: string,
   updates: UpdateCustomerData,
 ) {
@@ -217,7 +217,7 @@ export async function updateCustomer(
   return getCustomerById(db, customerId);
 }
 
-export async function getOrdersByCustomerId(db: PgDb, customerId: string) {
+export async function getOrdersByCustomerId(db: AppDb, customerId: string) {
   const customerOrders = await db
     .select({
       id: orders.id,
@@ -257,7 +257,7 @@ export async function getOrdersByCustomerId(db: PgDb, customerId: string) {
   return ordersWithHistory;
 }
 
-export async function getCustomerGroupMemberships(db: PgDb, customerId: string) {
+export async function getCustomerGroupMemberships(db: AppDb, customerId: string) {
   return await db
     .select({
       id: customerGroups.id,
@@ -275,7 +275,7 @@ export async function getCustomerGroupMemberships(db: PgDb, customerId: string) 
     ;
 }
 
-export async function getCustomerTagMemberships(db: PgDb, customerId: string) {
+export async function getCustomerTagMemberships(db: AppDb, customerId: string) {
   return await db
     .select({
       id: customerTags.id,

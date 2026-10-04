@@ -5,8 +5,8 @@
  */
 
 import { eq, desc, and } from "drizzle-orm";
-import { activityLogs } from "../db/schema.pg";
-import type { PgDb } from "../db/client.pg";
+import { activityLogs } from "../db/schema";
+import type { AppDb } from "../db/client";
 
 export interface ActivityLogFilters {
   actorId?: string;
@@ -15,7 +15,7 @@ export interface ActivityLogFilters {
   offset?: number;
 }
 
-export async function listActivityLogs(db: PgDb, filters?: ActivityLogFilters) {
+export async function listActivityLogs(db: AppDb, filters?: ActivityLogFilters) {
   const conditions = [];
   if (filters?.actorId) conditions.push(eq(activityLogs.actorId, filters.actorId));
   if (filters?.entityType)
@@ -35,7 +35,7 @@ export async function listActivityLogs(db: PgDb, filters?: ActivityLogFilters) {
 }
 
 export async function getUserActivityLogs(
-  db: PgDb,
+  db: AppDb,
   userId: string,
   opts?: { limit?: number; offset?: number },
 ) {

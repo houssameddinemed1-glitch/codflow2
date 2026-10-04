@@ -6,8 +6,8 @@
  * aggregation. Add new analytics queries here as the system grows.
  */
 
-import type { PgDb } from "../db/client.pg";
-import { orders, type OrderStatus } from "../db/schema.pg";
+import type { AppDb } from "../db/client";
+import { orders, type OrderStatus } from "../db/schema";
 import { sql } from "drizzle-orm";
 
 export interface OrderStatusStat {
@@ -20,7 +20,7 @@ export interface OrderStatusStat {
  * Only statuses that have at least one order are returned.
  * The caller is responsible for filling in zeros for absent statuses.
  */
-export async function getOrderStatusStats(db: PgDb): Promise<OrderStatusStat[]> {
+export async function getOrderStatusStats(db: AppDb): Promise<OrderStatusStat[]> {
   const rows = await db
     .select({
       status: orders.status,

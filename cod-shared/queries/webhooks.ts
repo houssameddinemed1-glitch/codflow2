@@ -6,8 +6,8 @@
  */
 
 import { eq } from "drizzle-orm";
-import { webhookEvents, orders } from "../db/schema.pg";
-import type { PgDb } from "../db/client.pg";
+import { webhookEvents, orders } from "../db/schema";
+import type { AppDb } from "../db/client";
 
 export interface InsertWebhookEventData {
   provider: string;
@@ -49,7 +49,7 @@ function isUniqueViolation(err: unknown): boolean {
 }
 
 export async function insertWebhookEvent(
-  db: PgDb,
+  db: AppDb,
   data: InsertWebhookEventData,
 ): Promise<{ id: string; isDuplicate: boolean }> {
   const id = crypto.randomUUID();
@@ -77,7 +77,7 @@ export async function insertWebhookEvent(
 }
 
 export async function updateWebhookEvent(
-  db: PgDb,
+  db: AppDb,
   id: string,
   updates: UpdateWebhookEventData,
 ): Promise<void> {
@@ -98,7 +98,7 @@ export async function updateWebhookEvent(
     .where(eq(webhookEvents.id, id));
 }
 
-export async function getOrderByTracking(db: PgDb, trackingNumber: string) {
+export async function getOrderByTracking(db: AppDb, trackingNumber: string) {
   return await db
     .select()
     .from(orders)
@@ -106,7 +106,7 @@ export async function getOrderByTracking(db: PgDb, trackingNumber: string) {
     .then((rows) => rows[0] ?? null);
 }
 
-export async function getOrderByReference(db: PgDb, reference: string) {
+export async function getOrderByReference(db: AppDb, reference: string) {
   return await db
     .select()
     .from(orders)

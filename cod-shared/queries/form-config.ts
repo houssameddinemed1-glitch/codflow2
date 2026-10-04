@@ -1,5 +1,5 @@
-import type { PgDb } from "../db/client.pg";
-import { storeFormConfig } from "../db/schema.pg";
+import type { AppDb } from "../db/client";
+import { storeFormConfig } from "../db/schema";
 import { eq } from "drizzle-orm";
 
 /** Order form variant keys. "default" is the untouched OrderForm; "form_a"+ are theme variations. */
@@ -7,7 +7,7 @@ export type FormVariant = "default" | "form_a";
 
 export const FORM_VARIANTS: FormVariant[] = ["default", "form_a"];
 
-export async function getFormConfig(db: PgDb, storeId?: string) {
+export async function getFormConfig(db: AppDb, storeId?: string) {
   if (storeId) {
     return db
       .select()
@@ -19,7 +19,7 @@ export async function getFormConfig(db: PgDb, storeId?: string) {
 }
 
 export async function upsertFormConfig(
-  db: PgDb,
+  db: AppDb,
   storeId: string,
   data: { variant: FormVariant },
 ) {

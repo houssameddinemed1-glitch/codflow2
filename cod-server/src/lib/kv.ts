@@ -1,10 +1,10 @@
 import { Redis } from "@upstash/redis";
+import type { KVNamespace } from "@cloudflare/workers-types";
 
 /**
  * Minimal KV surface used across cod-server (OTP guards, MCP rate limit,
- * grant markers). Mirrors the Cloudflare KVNamespace calls we relied on so
- * call sites stay unchanged — only the backing store moved to Upstash Redis
- * (Vercel KV).
+ * grant markers). Mirrors Cloudflare KVNamespace calls so call sites stay
+ * unchanged across runtimes — only the backing store differs.
  */
 export interface KVLike {
   get(key: string): Promise<string | null>;
@@ -54,11 +54,15 @@ let cached: KVLike | null = null;
 let resolved = false;
 
 /**
- * Shared rate-limit/session KV. Returns undefined when unconfigured —
- * every caller already treats that as "no local guard" (fail-open).
- * Reads Vercel's injected Upstash variables.
+ * Shared rate-limit/session KV. Pass the request's KV binding on Workers
+ * (OTP → RATE_LIMIT, MCP → OAUTH_KV); a Cloudflare KVNamespace already
+ * satisfies KVLike (get/put/delete with the same option keys), so it is
+ * used directly. Without a binding it falls back to Upstash (Vercel/local).
+ * Returns undefined when unconfigured — every caller already treats that as
+ * "no local guard" (fail-open).
  */
-export function kvFromEnv(): KVLike | undefined {
+export function kvFromEnv(binding?: KVNamespace | KVLike): KVLike | undefined {
+  if (binding) return binding as unknown as KVLike;
   if (!resolved) {
     resolved = true;
     const url = process.env.KV_REST_API_URL;

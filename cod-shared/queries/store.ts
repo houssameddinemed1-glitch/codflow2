@@ -40,8 +40,8 @@ import {
   reviews,
   offers,
   stockMovements,
-} from "../db/schema.pg";
-import type { PgDb } from "../db/client.pg";
+} from "../db/schema";
+import type { AppDb } from "../db/client";
 import { parseCheckoutFormPolicy } from "../checkout-form/policy";
 import { resolveStorefrontWidget } from "../whatsapp-widget/config";
 import {
@@ -87,7 +87,7 @@ export interface StoreOrderData {
   userAgent?: string;
 }
 
-export async function getStoreConfig(db: PgDb, storeId: string) {
+export async function getStoreConfig(db: AppDb, storeId: string) {
   const store = await db.select().from(stores).where(eq(stores.id, storeId)).then((rows) => rows[0] ?? null);
   if (!store) return null;
   const [pixelRow, tiktokRow, otpRow, turnstileRow] = await Promise.all([
@@ -174,7 +174,7 @@ function chunkIds(ids: string[]): string[][] {
 }
 
 export async function getStoreProducts(
-  db: PgDb,
+  db: AppDb,
   params: { featured?: boolean; categoryId?: string; limit?: number },
 ) {
   const conditions: any[] = [
@@ -267,7 +267,7 @@ export async function getStoreProducts(
  * (unlisted) product still renders there; the other gates still apply.
  */
 export async function getStoreProductByHandle(
-  db: PgDb,
+  db: AppDb,
   handle: string,
   opts?: { allowUnlisted?: boolean },
 ) {
@@ -397,11 +397,11 @@ export async function getStoreProductByHandle(
   };
 }
 
-export async function getStoreCategories(db: PgDb) {
+export async function getStoreCategories(db: AppDb) {
   return db.select().from(productCategories).orderBy(productCategories.position);
 }
 
-export async function getStoreCommunes(db: PgDb, wilayaId: number) {
+export async function getStoreCommunes(db: AppDb, wilayaId: number) {
   return db
     .select({ id: communes.id, name: communes.name, nameAr: communes.nameAr })
     .from(communes)
@@ -410,7 +410,7 @@ export async function getStoreCommunes(db: PgDb, wilayaId: number) {
 }
 
 export async function findOrCreateCustomer(
-  db: PgDb,
+  db: AppDb,
   data: { phone: string; name: string; wilayaId: number; communeId?: string },
 ) {
   const [wilayaRecord, communeRecord] = await Promise.all([
@@ -473,7 +473,7 @@ export async function findOrCreateCustomer(
  *    restriction).
  */
 export async function getDeliveryFee(
-  db: PgDb,
+  db: AppDb,
   wilayaId: number,
   deliveryType: "home" | "stop_desk",
 ): Promise<number | null> {
@@ -502,7 +502,7 @@ export async function getDeliveryFee(
   return deliveryType === "stop_desk" ? rule.stopDeskPrice : rule.homePrice;
 }
 
-export async function getShippingRates(db: PgDb) {
+export async function getShippingRates(db: AppDb) {
   const profile = await db
     .select()
     .from(shippingProfiles)
@@ -524,7 +524,7 @@ export async function getShippingRates(db: PgDb) {
 // ─── Offer selection helper ───────────────────────────────────────────────────
 
 export async function selectApplicableOffer(
-  db: PgDb,
+  db: AppDb,
   productId: string,
   quantity: number,
   variantId: string | null | undefined,
@@ -602,7 +602,7 @@ function groupVariantSelections(
 // ─── Stock pre-check (before order creation) ─────────────────────────────────
 
 export async function checkStoreOrderStock(
-  db: PgDb,
+  db: AppDb,
   params: {
     productId: string;
     variantId: string | null;
@@ -672,7 +672,7 @@ interface DeductStockInput {
  * database itself rather than a racy pre-read.
  */
 async function applyDeduct(
-  tx: Parameters<Parameters<PgDb["transaction"]>[0]>[0],
+  tx: Parameters<Parameters<AppDb["transaction"]>[0]>[0],
   input: DeductStockInput,
 ) {
   const { productId, variantId, quantity, orderId, customerId, customerName, now } = input;
@@ -723,7 +723,7 @@ async function applyDeduct(
 }
 
 export async function createStoreOrder(
-  db: PgDb,
+  db: AppDb,
   data: StoreOrderData & {
     customerId: string;
     customerName: string;
@@ -1089,7 +1089,7 @@ export async function createStoreOrder(
 // ─── Reviews ──────────────────────────────────────────────────────────────────
 
 export async function getApprovedProductReviews(
-  db: PgDb,
+  db: AppDb,
   storeId: string,
   productId: string,
   limit = 20,
@@ -1131,7 +1131,7 @@ export async function getApprovedProductReviews(
  * store the UUID on the review row as the stable FK.
  */
 export async function findOrderForReview(
-  db: PgDb,
+  db: AppDb,
   _storeId: string,
   orderNumber: string,
 ) {
@@ -1152,12 +1152,12 @@ export async function findOrderForReview(
   return order;
 }
 
-export async function getExistingReviewByOrder(db: PgDb, orderId: string) {
+export async function getExistingReviewByOrder(db: AppDb, orderId: string) {
   return db.select().from(reviews).where(eq(reviews.orderId, orderId)).then((rows) => rows[0] ?? null);
 }
 
 export async function createReview(
-  db: PgDb,
+  db: AppDb,
   data: {
     storeId: string;
     productId: string;
@@ -1192,7 +1192,7 @@ export async function createReview(
 }
 
 export async function validateOrderSkus(
-  db: PgDb,
+  db: AppDb,
   productId: string,
   variantId?: string,
   variantSelections?: { variantId: string }[],

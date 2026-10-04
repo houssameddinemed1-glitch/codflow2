@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type { AppContext } from "@/types";
+import { getDb } from "@/db";
 import { verifyQstashRequest } from "@/lib/queue";
 import { runCapiEvent } from "./run-capi";
 import { runTiktokEvent } from "./run-tiktok";
@@ -19,7 +20,7 @@ internalWorkflowsRouter.post("/capi", async (c) => {
     return c.json({ error: "Unauthorized" }, 401);
   }
   try {
-    const result = await runCapiEvent(await c.req.json());
+    const result = await runCapiEvent(getDb(c.env.DB), await c.req.json());
     return c.json({ success: true, data: result }, 200);
   } catch (err) {
     console.error("[workflow][capi] failed:", err instanceof Error ? err.message : String(err));
@@ -32,7 +33,7 @@ internalWorkflowsRouter.post("/tiktok", async (c) => {
     return c.json({ error: "Unauthorized" }, 401);
   }
   try {
-    const result = await runTiktokEvent(await c.req.json());
+    const result = await runTiktokEvent(getDb(c.env.DB), await c.req.json());
     return c.json({ success: true, data: result }, 200);
   } catch (err) {
     console.error("[workflow][tiktok] failed:", err instanceof Error ? err.message : String(err));
@@ -45,7 +46,7 @@ internalWorkflowsRouter.post("/lp-image-upload", async (c) => {
     return c.json({ error: "Unauthorized" }, 401);
   }
   try {
-    const result = await runLpImageUpload(await c.req.json());
+    const result = await runLpImageUpload(getDb(c.env.DB), await c.req.json());
     return c.json({ success: true, data: result }, 200);
   } catch (err) {
     console.error("[workflow][lp-image-upload] failed:", err instanceof Error ? err.message : String(err));

@@ -5,8 +5,8 @@
  */
 
 import { eq, and, desc, sql, isNull } from "drizzle-orm";
-import { products, productVariants, stockMovements } from "../db/schema.pg";
-import type { PgDb } from "../db/client.pg";
+import { products, productVariants, stockMovements } from "../db/schema";
+import type { AppDb } from "../db/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -82,7 +82,7 @@ export interface UpdateThresholdData {
 // ─── Stock History ────────────────────────────────────────────────────────────
 
 export async function getStockHistory(
-  db: PgDb,
+  db: AppDb,
   productId: string,
   filters: StockHistoryFilters,
 ): Promise<{ movements: StockMovementRow[]; total: number }> {
@@ -183,8 +183,8 @@ function toAlertItem(row: TrackedSkuRow): StockAlertItem {
 
 const SKU_ORDER = sql` ORDER BY is_out_of_stock DESC, inventory ASC, product_id ASC, variant_id ASC`;
 
-export async function getStockOverview(db: PgDb): Promise<StockOverview> {
-  const rows = (await db.execute(
+export async function getStockOverview(db: AppDb): Promise<StockOverview> {
+  const rows = (await db.all(
     sql`${trackedSkuSql(false)}${SKU_ORDER}`,
   )) as unknown as TrackedSkuRow[];
 
@@ -216,13 +216,13 @@ export async function getStockOverview(db: PgDb): Promise<StockOverview> {
 // ─── Stock Alerts ─────────────────────────────────────────────────────────────
 
 export async function getStockAlerts(
-  db: PgDb,
+  db: AppDb,
   filters: StockAlertsFilters,
 ): Promise<{ items: StockAlertItem[]; total: number }> {
-  const rows = (await db.execute(
+  const rows = (await db.all(
     sql`${trackedSkuSql(true)}${SKU_ORDER} LIMIT ${filters.limit} OFFSET ${filters.offset}`,
   )) as unknown as TrackedSkuRow[];
-  const totalRows = (await db.execute(
+  const totalRows = (await db.all(
     sql`SELECT COUNT(*) AS total FROM (${trackedSkuSql(true)})`,
   )) as unknown as Array<{ total: number }>;
   const totalRow = totalRows[0] ?? null;
@@ -236,7 +236,7 @@ export async function getStockAlerts(
 // ─── Update Threshold ─────────────────────────────────────────────────────────
 
 export async function updateProductThreshold(
-  db: PgDb,
+  db: AppDb,
   productId: string,
   data: UpdateThresholdData,
 ): Promise<boolean> {
@@ -255,7 +255,7 @@ export async function updateProductThreshold(
 }
 
 export async function updateVariantThreshold(
-  db: PgDb,
+  db: AppDb,
   variantId: string,
   productId: string,
   data: UpdateThresholdData,
@@ -277,7 +277,7 @@ export async function updateVariantThreshold(
 // ─── Internal helper (exposed for server-side adjustStock) ───────────────────
 
 export async function getProductInventory(
-  db: PgDb,
+  db: AppDb,
   productId: string,
   variantId: string | null,
 ): Promise<{ inventory: number; exists: boolean }> {

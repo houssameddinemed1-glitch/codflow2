@@ -19,8 +19,8 @@
  */
 
 import { eq } from "drizzle-orm";
-import { stores } from "../db/schema.pg";
-import type { PgDb } from "../db/client.pg";
+import { stores } from "../db/schema";
+import type { AppDb } from "../db/client";
 import {
   isDefaultCheckoutFormPolicy,
   parseCheckoutFormPolicy,
@@ -41,7 +41,7 @@ export interface StoreCheckoutForm {
  * stops an order.
  */
 export async function getCheckoutFormPolicy(
-  db: PgDb,
+  db: AppDb,
   storeId: string,
 ): Promise<StoreCheckoutForm> {
   const row = await db
@@ -57,7 +57,7 @@ export async function getCheckoutFormPolicy(
 }
 
 export async function saveCheckoutFormPolicy(
-  db: PgDb,
+  db: AppDb,
   storeId: string,
   policy: CheckoutFormPolicy,
 ): Promise<CheckoutFormPolicy> {

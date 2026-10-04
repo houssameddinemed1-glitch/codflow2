@@ -1,30 +1,17 @@
-import { getPgDb, type PgDb } from "../../../cod-shared/db/client.pg";
+import { drizzle } from "drizzle-orm/d1";
+import type { D1Database } from "@cloudflare/workers-types";
+import * as schema from "./schema";
+import type { AppDb } from "../../../cod-shared/db/client";
 
-export type { PgDb };
-/**
- * Historical alias: endpoint code was written against `AppDb` (D1). On the
- * Vercel stack it is the Postgres database — same name, new engine.
- */
-export type AppDb = PgDb;
-
-let cached: PgDb | null = null;
+export type { AppDb };
 
 /**
- * Returns the shared Postgres client. The optional argument preserves every
- * existing `getDb(c.env.DB)` call site — the D1 handle is simply ignored.
+ * Returns the D1-backed database for this request. Every endpoint calls
+ * getDb(c.env.DB) — the Workers D1 binding flows straight through.
  */
-export function getDb(_d1?: unknown): PgDb {
-  if (!cached) {
-    const url = process.env.DATABASE_URL;
-    if (!url) {
-      throw new Error("DATABASE_URL is not set — connect Vercel Postgres (or set it locally)");
-    }
-    cached = getPgDb(url);
-  }
-  return cached;
+export function getDb(d1: D1Database): AppDb {
+  return drizzle(d1, { schema });
 }
 
-/** Test seam: reset the cached client between tests. */
-export function resetDbCache(): void {
-  cached = null;
-}
+/** Test seam: no cache to reset (per-request client). */
+export function resetDbCache(): void {}

@@ -17,8 +17,8 @@ import {
   communes,
   wilayas,
   products,
-} from "../db/schema.pg";
-import type { PgDb } from "../db/client.pg";
+} from "../db/schema";
+import type { AppDb } from "../db/client";
 
 export interface CreateProfileData {
   name: string;
@@ -85,7 +85,7 @@ function now() {
   return new Date().toISOString();
 }
 
-export async function getAllProfiles(db: PgDb): Promise<ShippingProfile[]> {
+export async function getAllProfiles(db: AppDb): Promise<ShippingProfile[]> {
   const profiles = await db.select().from(shippingProfiles);
   const results = await Promise.all(
     profiles.map(async (p) => {
@@ -117,7 +117,7 @@ export async function getAllProfiles(db: PgDb): Promise<ShippingProfile[]> {
 }
 
 export async function getProfileById(
-  db: PgDb,
+  db: AppDb,
   id: string,
 ): Promise<ShippingProfileWithRules | null> {
   const profile = await db
@@ -176,7 +176,7 @@ export async function getProfileById(
   };
 }
 
-export async function getDefaultProfileRules(db: PgDb): Promise<ShippingRule[]> {
+export async function getDefaultProfileRules(db: AppDb): Promise<ShippingRule[]> {
   const defaultProfile = await db
     .select()
     .from(shippingProfiles)
@@ -218,7 +218,7 @@ export async function getDefaultProfileRules(db: PgDb): Promise<ShippingRule[]> 
 }
 
 export async function createProfile(
-  db: PgDb,
+  db: AppDb,
   data: CreateProfileData,
 ): Promise<ShippingProfileWithRules> {
   const id = newProfileId();
@@ -252,7 +252,7 @@ export async function createProfile(
   };
 }
 
-export async function deleteProfile(db: PgDb, id: string): Promise<boolean> {
+export async function deleteProfile(db: AppDb, id: string): Promise<boolean> {
   const existing = await db
     .select()
     .from(shippingProfiles)
@@ -268,7 +268,7 @@ export async function deleteProfile(db: PgDb, id: string): Promise<boolean> {
 // ─── Commune Override Queries ─────────────────────────────────────────────────
 
 export async function getWilayaRule(
-  db: PgDb,
+  db: AppDb,
   profileId: string,
   wilayaId: number,
 ) {
@@ -282,7 +282,7 @@ export async function getWilayaRule(
 }
 
 export async function getCommunesWithOverrides(
-  db: PgDb,
+  db: AppDb,
   ruleId: string,
   wilayaId: number,
   wilayaRule: {
@@ -333,7 +333,7 @@ export async function getCommunesWithOverrides(
 }
 
 export async function setCommuneOverride(
-  db: PgDb,
+  db: AppDb,
   ruleId: string,
   communeId: string,
   data: CommuneOverrideData,
@@ -395,7 +395,7 @@ export async function setCommuneOverride(
 }
 
 export async function deleteCommuneOverride(
-  db: PgDb,
+  db: AppDb,
   ruleId: string,
   communeId: string,
 ): Promise<boolean> {

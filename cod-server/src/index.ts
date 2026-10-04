@@ -3,12 +3,16 @@
  *
  * This file defines the Hono app and mounts all routes/middleware.
  * It is consumed by two entry points:
- *   - api/index.ts (Vercel) — imports the app and wraps it for Vercel's runtime
- *   - src/index.ts is NOT the entry — api/index.ts is.
+ *   - Cloudflare Workers (wrangler main) — `export default app` below
+ *     receives the real bindings (D1, KV, R2) as c.env.
+ *   - api/index.ts (Vercel) — imports the app and wraps it for Vercel's
+ *     runtime with an Env shim built from process.env.
  */
 
 import { OpenAPIHono } from "@hono/zod-openapi";
 import type { AppContext, Env } from "@/types";
+import { getDb } from "@/db";
+import { configureBlobStorage } from "@/lib/blob";
 import { corsMiddleware } from "@/middleware/cors";
 import { authMiddleware } from "@/middleware/auth";
 import { storeAuthMiddleware } from "@/middleware/storeAuth";
@@ -30,7 +34,7 @@ import productGroupsRoutes from "@/endpoints/product-groups/routes";
 import landingPagesRoutes from "@/endpoints/landing-pages/routes";
 import shippingProfilesRoutes from "@/endpoints/shipping-profiles/routes";
 import driverPaymentsRoutes from "@/endpoints/driver-payments/routes";
-import { uploadRouter, serveRouter, callbackRouter } from "@/endpoints/images/routes";
+import { uploadRouter, serveRouter, presignRouter } from "@/endpoints/images/routes";
 import activityLogsRoutes from "@/endpoints/activity-logs/routes";
 import storesRoutes from "@/endpoints/stores/routes";
 import reviewsRoutes from "@/endpoints/reviews/routes";
@@ -55,6 +59,33 @@ const app = new OpenAPIHono<AppContext>({ defaultHook: openApiValidationHook });
 
 // Global middleware
 app.use("*", corsMiddleware);
+// Cloudflare Workers have no process.env per request — a few shared modules
+// (queue, lp runner) still read deployment-constant values from it. Mirror
+// them from the bindings once per request; values are identical for every
+// request of this deployment, so this is isolate-safe.
+app.use("*", async (c, next) => {
+  const mirror = (key: "QSTASH_TOKEN" | "QSTASH_CURRENT_SIGNING_KEY" | "QSTASH_NEXT_SIGNING_KEY" | "WORKER_SELF_URL" | "MEDIA_DOMAIN") => {
+    const value = c.env[key];
+    if (value) process.env[key] = value;
+  };
+  mirror("QSTASH_TOKEN");
+  mirror("QSTASH_CURRENT_SIGNING_KEY");
+  mirror("QSTASH_NEXT_SIGNING_KEY");
+  mirror("WORKER_SELF_URL");
+  mirror("MEDIA_DOMAIN");
+  await next();
+});
+// Default R2 storage for the 3-arg blob seam (same bucket every request).
+app.use("*", async (c, next) => {
+  if (c.env.IMAGES) {
+    configureBlobStorage({
+      bucket: c.env.IMAGES,
+      mediaDomain: c.env.MEDIA_DOMAIN ?? null,
+      workerUrl: c.env.WORKER_URL ?? null,
+    });
+  }
+  await next();
+});
 app.onError(errorHandler);
 
 // Image serving — no auth required (public, cacheable)
@@ -107,7 +138,7 @@ app.get("/api/cron", async (c) => {
     return c.json({ error: "Unauthorized" }, 401);
   }
   const { sweepAbandonedOrders } = await import("@/cron/sweep-abandoned-orders");
-  const count = await sweepAbandonedOrders();
+  const count = await sweepAbandonedOrders(getDb(c.env.DB));
 
   // NOEST has no status webhooks — this daily run is the automatic freshness
   // source for NOEST parcels. Failures must never break the sweep response.
@@ -130,7 +161,7 @@ app.use("/api/*", authMiddleware);
 
 // Mount endpoint routes
 app.route("/api/images", uploadRouter);
-app.route("/api/images", callbackRouter);
+app.route("/api/images", presignRouter);
 app.route("/api/activity-logs", activityLogsRoutes);
 app.route("/api/orders", ordersRoutes);
 app.route("/api/users", usersRoutes);

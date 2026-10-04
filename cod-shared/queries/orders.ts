@@ -4,7 +4,7 @@
  * Centralized database operations for orders management.
  */
 
-import type { PgDb } from "../db/client.pg";
+import type { AppDb } from "../db/client";
 import {
   orders,
   orderProducts,
@@ -23,8 +23,8 @@ import {
   webhookEvents,
   capiEventLog,
   tiktokEventLog,
-} from "../db/schema.pg";
-import type { OrderStatus } from "../db/schema.pg";
+} from "../db/schema";
+import type { OrderStatus } from "../db/schema";
 import {
   eq,
   desc,
@@ -85,7 +85,7 @@ export function parseOrderCursor(
  * Get all orders with optional filtering.
  * Joins wilayas + communes to return Arabic display names.
  */
-export async function getAllOrders(db: PgDb, filters: OrderFilters = {}) {
+export async function getAllOrders(db: AppDb, filters: OrderFilters = {}) {
   const conditions = [];
 
   if (filters.status && filters.status !== "all") {
@@ -150,7 +150,7 @@ export async function getAllOrders(db: PgDb, filters: OrderFilters = {}) {
     ;
 }
 
-export async function getOrderById(db: PgDb, orderId: string) {
+export async function getOrderById(db: AppDb, orderId: string) {
   const order = await db
     .select({
       ...getTableColumns(orders),
@@ -203,7 +203,7 @@ export async function getOrderById(db: PgDb, orderId: string) {
 }
 
 export async function createOrder(
-  db: PgDb,
+  db: AppDb,
   orderData: typeof orders.$inferInsert,
   productsData: Array<typeof orderProducts.$inferInsert>,
   actor?: { id: string; name: string } | null,
@@ -316,7 +316,7 @@ export async function createOrder(
 }
 
 export async function updateOrderStatus(
-  db: PgDb,
+  db: AppDb,
   orderId: string,
   newStatus: OrderStatus,
   userId?: string,
@@ -500,7 +500,7 @@ export interface UpdateOrderData {
  * customerEmail is order-only — customers have no email column.
  */
 export async function updateOrder(
-  db: PgDb,
+  db: AppDb,
   orderId: string,
   updates: UpdateOrderData,
 ) {
@@ -567,7 +567,7 @@ export async function updateOrder(
 }
 
 export async function setOrderProductReturn(
-  db: PgDb,
+  db: AppDb,
   orderId: string,
   productLineId: string,
   newReturnedQty: number,
@@ -700,7 +700,7 @@ export async function setOrderProductReturn(
   };
 }
 
-export async function assignDriver(db: PgDb, orderId: string, driverId: string) {
+export async function assignDriver(db: AppDb, orderId: string, driverId: string) {
   const now = new Date().toISOString();
 
   const order = await db
@@ -744,7 +744,7 @@ export async function assignDriver(db: PgDb, orderId: string, driverId: string) 
   return true;
 }
 
-export async function unassignDriver(db: PgDb, orderId: string) {
+export async function unassignDriver(db: AppDb, orderId: string) {
   const now = new Date().toISOString();
 
   const order = await db
@@ -769,7 +769,7 @@ export async function unassignDriver(db: PgDb, orderId: string) {
   return true;
 }
 
-export async function assignCompany(db: PgDb, orderId: string, companyId: string) {
+export async function assignCompany(db: AppDb, orderId: string, companyId: string) {
   await db
     .update(orders)
     .set({
@@ -781,7 +781,7 @@ export async function assignCompany(db: PgDb, orderId: string, companyId: string
 }
 
 export async function syncOrderAfterCarrierUpdate(
-  db: PgDb,
+  db: AppDb,
   orderId: string,
   fields: { customerName?: string; phone?: string; price?: number },
 ) {
@@ -800,7 +800,7 @@ export async function syncOrderAfterCarrierUpdate(
 }
 
 export async function updateOrderTracking(
-  db: PgDb,
+  db: AppDb,
   orderId: string,
   trackingNumber: string,
   trackingUrl?: string,
@@ -819,7 +819,7 @@ export async function updateOrderTracking(
     .where(eq(orders.id, orderId));
 }
 
-export async function clearOrderTracking(db: PgDb, orderId: string) {
+export async function clearOrderTracking(db: AppDb, orderId: string) {
   await db
     .update(orders)
     .set({
@@ -830,7 +830,7 @@ export async function clearOrderTracking(db: PgDb, orderId: string) {
     .where(eq(orders.id, orderId));
 }
 
-export async function deleteOrder(db: PgDb, orderId: string) {
+export async function deleteOrder(db: AppDb, orderId: string) {
   const now = new Date().toISOString();
 
   // Get order details first to update customer stats
@@ -1015,7 +1015,7 @@ interface RestockResolved extends RestockLine {
 }
 
 async function resolveRestockLines(
-  db: PgDb,
+  db: AppDb,
   orderId: string,
 ): Promise<RestockLine[]> {
   const ordProductRows = await db
@@ -1054,7 +1054,7 @@ async function resolveRestockLines(
 }
 
 async function readCurrentInventories(
-  db: PgDb,
+  db: AppDb,
   lines: RestockLine[],
 ): Promise<RestockResolved[]> {
   const resolved: RestockResolved[] = [];
@@ -1070,7 +1070,7 @@ async function readCurrentInventories(
 }
 
 export async function updateOrderStatusWebhook(
-  db: PgDb,
+  db: AppDb,
   orderId: string,
   newStatus: OrderStatus,
   source: string,
@@ -1174,7 +1174,7 @@ export async function updateOrderStatusWebhook(
 }
 
 export async function updateOrderInternalNote(
-  db: PgDb,
+  db: AppDb,
   orderId: string,
   internalNote: string | null,
 ) {
@@ -1188,7 +1188,7 @@ export async function updateOrderInternalNote(
 }
 
 export async function incrementDeliveryAttempts(
-  db: PgDb,
+  db: AppDb,
   orderId: string,
 ): Promise<void> {
   await db
@@ -1252,7 +1252,7 @@ function orderLineKey(productId: string, variantId: string | null | undefined): 
 }
 
 export async function updateOrderDetails(
-  db: PgDb,
+  db: AppDb,
   orderId: string,
   input: UpdateOrderDetailsInput,
   actor?: { id: string; name: string } | null,

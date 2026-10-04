@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { getDb } from "@/db";
+import type { AppDb } from "@/db";
 import { parseImageDimensions, sniffImageType } from "@/lib/image-dimensions";
 import { blobPut, blobPublicUrl } from "@/lib/blob";
 import {
@@ -213,7 +213,7 @@ async function readAndMeasureObject(
   };
 }
 
-export async function runLpImageUpload(raw: unknown): Promise<
+export async function runLpImageUpload(db: AppDb, raw: unknown): Promise<
   | { skipped: true; reason: string }
   | { success: boolean; imageId: string | null }
 > {
@@ -227,7 +227,6 @@ export async function runLpImageUpload(raw: unknown): Promise<
       typeof raw === "object" && raw !== null &&
       /^lpimg-[a-f0-9]{32}$/.test((raw as Record<string, unknown>).uploadJobId as string ?? "")
     ) {
-      const db = getDb();
       await markLpImageUploadFailed(
         db,
         (raw as { uploadJobId: string }).uploadJobId,
@@ -237,7 +236,6 @@ export async function runLpImageUpload(raw: unknown): Promise<
     return { skipped: true, reason: `invalid_payload: ${reason}` };
   }
   const params = parsed.data;
-  const db = getDb();
 
   const fail = async (reason: string, message: string) => {
     await markLpImageUploadFailed(db, params.uploadJobId, message).catch(() => {});
