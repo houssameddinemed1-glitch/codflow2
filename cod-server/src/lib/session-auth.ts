@@ -23,6 +23,13 @@ export interface SessionJwtPayload {
 interface Env {
   BETTER_AUTH_URL?: string;
   WORKER_SELF_URL?: string;
+  /**
+   * Origin serving the CURRENT signing keys (/api/auth/jwks). Defaults to
+   * BETTER_AUTH_URL. Split out because keys can move independently of the
+   * issuer identity: while the dashboard domain still serves the previous
+   * deployment, keys already live on the new worker.
+   */
+  AUTH_JWKS_BASE_URL?: string;
 }
 
 const JWKS_TTL_MS = 5 * 60 * 1000;
@@ -34,9 +41,14 @@ function authBaseUrl(env: Env): string {
   return (env.BETTER_AUTH_URL ?? "").replace(/\/api\/auth$/, "");
 }
 
+function jwksBaseUrl(env: Env): string {
+  const override = (env.AUTH_JWKS_BASE_URL ?? "").replace(/\/+$/, "");
+  return override || authBaseUrl(env);
+}
+
 async function fetchJwks(env: Env, force = false): Promise<void> {
   if (!force && jwksCache && Date.now() - jwksCache.fetchedAt < JWKS_TTL_MS) return;
-  const res = await fetch(`${authBaseUrl(env)}/api/auth/jwks`);
+  const res = await fetch(`${jwksBaseUrl(env)}/api/auth/jwks`);
   if (!res.ok) throw new Error(`Failed to fetch JWKS (${res.status})`);
   const body = (await res.json()) as { keys: Array<JsonWebKey & { kid?: string }> };
   const kidByKeyId = new Map<string, number>();

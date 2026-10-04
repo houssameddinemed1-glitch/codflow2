@@ -41,6 +41,8 @@ export interface Env {
   STOREFRONT_URL?: string;
   /** Dashboard auth origin (JWT issuer verification) */
   BETTER_AUTH_URL?: string;
+  /** Origin serving the current JWKS keys (defaults to BETTER_AUTH_URL) */
+  AUTH_JWKS_BASE_URL?: string;
   /** Shared secret for the internal cron route */
   CRON_SECRET?: string;
   /** QStash token for background publishes (fail-open when absent) */
