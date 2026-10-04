@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 import { defineConfig, envField } from "astro/config";
 import react from "@astrojs/react";
 import tailwindcss from "@tailwindcss/vite";
-import vercel from "@astrojs/vercel";
+import cloudflare from "@astrojs/cloudflare";
 
 const orderDetailFallback = {
   name: "order-detail-static-fallback",
@@ -31,7 +31,7 @@ const orderDetailFallback = {
 
 // Static-first: every page prerenders at build time except routes that opt out
 // with `export const prerender = false` (/api/auth/*, /mcp/oauth/login,
-// /reset-password/*). Those become Vercel serverless functions.
+// /reset-password/*). Those run in the Cloudflare Worker.
 export default defineConfig({
   output: "static",
   env: {
@@ -40,18 +40,15 @@ export default defineConfig({
     },
   },
   integrations: [react()],
-  adapter: vercel(),
+  adapter: cloudflare(),
   vite: {
     plugins: [orderDetailFallback, tailwindcss()],
     ssr: {
-      noExternal: ["drizzle-orm", "@neondatabase/serverless"],
+      noExternal: ["drizzle-orm"],
     },
     resolve: {
       alias: {
         "@": fileURLToPath(new URL("./src", import.meta.url)),
-        "@neondatabase/serverless": fileURLToPath(
-          new URL("./node_modules/@neondatabase/serverless", import.meta.url),
-        ),
       },
     },
   },

@@ -1,5 +1,6 @@
 import type { APIRoute } from "astro";
-import { buildAuthEnvFromProcessEnv, createAuth } from "@/lib/auth/server";
+import { env } from "cloudflare:workers";
+import { buildAuthEnv, createAuth } from "@/lib/auth/server";
 import {
   mintLoginTicket,
   LOGIN_TICKET_MIN_KEY_BYTES,
@@ -18,7 +19,7 @@ export const prerender = false;
  */
 const ALL: APIRoute = async (ctx) => {
   const req = ctx.request;
-  const authEnv = buildAuthEnvFromProcessEnv();
+  const authEnv = buildAuthEnv(env as unknown as Record<string, any>);
   const secret = authEnv.MCP_LOGIN_TICKET_SECRET;
 
   if (!secret || secret.length < LOGIN_TICKET_MIN_KEY_BYTES) {

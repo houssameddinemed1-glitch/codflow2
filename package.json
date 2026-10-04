@@ -19,5 +19,12 @@
   },
   "dependencies": {
     "@vercel/analytics": "^2.0.1"
+  },
+  "allowScripts": {
+    "workerd@1.20261001.1": true,
+    "esbuild@0.18.20": true,
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.2": true,
+    "esbuild@0.28.1": true
   }
 }

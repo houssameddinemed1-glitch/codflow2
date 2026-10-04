@@ -1,22 +1,20 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { customSession, jwt } from "better-auth/plugins";
-import { drizzle } from "drizzle-orm/neon-http";
-import { neon } from "@neondatabase/serverless";
-import { Redis } from "@upstash/redis";
-import * as schema from "../../../../cod-shared/db/schema.pg";
-import { userScopes } from "../../../../cod-shared/db/schema.pg";
+import { drizzle } from "drizzle-orm/d1";
+import type { D1Database, KVNamespace } from "@cloudflare/workers-types";
+import * as schema from "../../../../cod-shared/db/schema";
+import { userScopes } from "../../../../cod-shared/db/schema";
 import { getStore } from "../../../../cod-shared/queries/stores";
 import { renderPasswordResetEmail } from "../../../../cod-shared/lib/email-templates";
 import { sendTransactionalEmail } from "../../../../cod-shared/lib/transactional-email";
 import { eq } from "drizzle-orm";
 
 export interface AuthEnv {
-  /** Neon Postgres connection string (shared auth database with cod-server). */
-  DATABASE_URL: string;
-  /** Upstash Redis REST credentials (rate-limit + session secondary storage). */
-  UPSTASH_REDIS_REST_URL: string;
-  UPSTASH_REDIS_REST_TOKEN: string;
+  /** D1 database binding (shared auth database with cod-server). */
+  DB: D1Database;
+  /** KV namespace for rate-limit + session secondary storage. */
+  RATE_LIMIT_KV: KVNamespace;
   PUBLIC_APP_URL: string;
   PUBLIC_API_URL: string;
   PUBLIC_TRUSTED_ORIGINS?: string;
@@ -29,50 +27,31 @@ export interface AuthEnv {
   MCP_LOGIN_TICKET_SECRET?: string;
 }
 
-/** Build the AuthEnv from process.env (Vercel runtime vars). Throws when required vars are missing. */
-export function buildAuthEnvFromProcessEnv(): AuthEnv {
+function required(value: string | undefined, name: string, hint: string): string {
+  if (!value) {
+    throw new Error(`Auth misconfigured: ${name} is not set. ${hint}`);
+  }
+  return value;
+}
+
+/**
+ * Build the AuthEnv from the Cloudflare Workers bindings + vars.
+ * Called per SSR request with the worker env (Astro: runtime env).
+ */
+export function buildAuthEnv(env: Record<string, any>): AuthEnv {
   const pick = (name: string): string | undefined => {
-    const v = process.env[name];
-    return v && v.length > 0 ? v : undefined;
+    const v = env[name];
+    return typeof v === "string" && v.length > 0 ? v : undefined;
   };
-  const required = (
-    value: string | undefined,
-    name: string,
-    hint: string,
-  ): string => {
-    if (!value) {
-      throw new Error(
-        `Auth misconfigured: ${name} is not set. ${hint}`,
-      );
-    }
-    return value;
-  };
+  const db = env.DB as D1Database | undefined;
+  if (!db) throw new Error("Auth misconfigured: DB binding is not set.");
+  const kv = env.RATE_LIMIT_KV as KVNamespace | undefined;
+  if (!kv) throw new Error("Auth misconfigured: RATE_LIMIT_KV binding is not set.");
   return {
-    DATABASE_URL: required(
-      pick("DATABASE_URL"),
-      "DATABASE_URL",
-      "Connect Neon Postgres (or set DATABASE_URL).",
-    ),
-    UPSTASH_REDIS_REST_URL: required(
-      pick("UPSTASH_REDIS_REST_URL") ?? pick("KV_REST_API_URL"),
-      "UPSTASH_REDIS_REST_URL",
-      "Connect Upstash Redis (KV_REST_API_URL also accepted).",
-    ),
-    UPSTASH_REDIS_REST_TOKEN: required(
-      pick("UPSTASH_REDIS_REST_TOKEN") ?? pick("KV_REST_API_TOKEN"),
-      "UPSTASH_REDIS_REST_TOKEN",
-      "Connect Upstash Redis (KV_REST_API_TOKEN also accepted).",
-    ),
-    PUBLIC_APP_URL: required(
-      pick("PUBLIC_APP_URL"),
-      "PUBLIC_APP_URL",
-      "Set the dashboard's public origin.",
-    ),
-    PUBLIC_API_URL: required(
-      pick("PUBLIC_API_URL"),
-      "PUBLIC_API_URL",
-      "Set the API origin (build-time PUBLIC_API_URL should match).",
-    ),
+    DB: db,
+    RATE_LIMIT_KV: kv,
+    PUBLIC_APP_URL: required(pick("PUBLIC_APP_URL"), "PUBLIC_APP_URL", "Set the dashboard's public origin."),
+    PUBLIC_API_URL: required(pick("PUBLIC_API_URL"), "PUBLIC_API_URL", "Set the API origin."),
     PUBLIC_TRUSTED_ORIGINS: pick("PUBLIC_TRUSTED_ORIGINS"),
     BETTER_AUTH_SECRET: required(
       pick("BETTER_AUTH_SECRET"),
@@ -83,40 +62,40 @@ export function buildAuthEnvFromProcessEnv(): AuthEnv {
   };
 }
 
-// One instance per request — never a module singleton. Neon HTTP is stateless
-// per query, so this is strictly safer than the old shared-D1 pattern.
-export function createAuth(env: AuthEnv) {
-  const sql = neon(env.DATABASE_URL);
-  const db = drizzle(sql, { schema });
+/** Retired Vercel entry — kept so existing imports keep compiling. */
+export function buildAuthEnvFromProcessEnv(): AuthEnv {
+  throw new Error("buildAuthEnvFromProcessEnv is retired — pass the worker env to buildAuthEnv instead.");
+}
 
-  const redis = new Redis({
-    url: env.UPSTASH_REDIS_REST_URL,
-    token: env.UPSTASH_REDIS_REST_TOKEN,
-  });
+// One instance per request — never a module singleton. D1 short-lived query
+// handles are created per call, so this is strictly request-scoped.
+export function createAuth(env: AuthEnv) {
+  const db = drizzle(env.DB, { schema });
+
+  const kv = env.RATE_LIMIT_KV;
   const secondaryStorage = {
-    get: (key: string) => redis.get<string>(key),
+    get: (key: string) => kv.get(key),
     getAndDelete: async (key: string) => {
-      const value = await redis.get<string>(key);
-      await redis.del(key);
+      const value = await kv.get(key);
+      await kv.delete(key);
       return value;
     },
     set: (key: string, value: string, ttl?: number) =>
-      ttl
-        ? redis.set(key, value, { ex: Math.max(60, Math.ceil(ttl)) })
-        : redis.set(key, value),
-    delete: (key: string) => redis.del(key).then(() => {}),
+      kv.put(key, value, ttl ? { expirationTtl: Math.max(60, Math.ceil(ttl)) } : undefined),
+    delete: (key: string) => kv.delete(key).then(() => {}),
+    // KV has no atomic increment — read-modify-write. Approximate, which is
+    // all rate limiting needs; matches the pre-migration CF behavior.
     increment: async (key: string, ttl?: number): Promise<number> => {
-      const next = await redis.incr(key);
-      if (next === 1) {
-        await redis.expire(key, Math.max(60, Math.ceil(ttl ?? 60)));
-      }
+      const current = Number((await kv.get(key)) ?? 0);
+      const next = (Number.isFinite(current) ? current : 0) + 1;
+      await kv.put(key, String(next), { expirationTtl: Math.max(60, Math.ceil(ttl ?? 60)) });
       return next;
     },
   };
 
   return betterAuth({
     database: drizzleAdapter(db, {
-      provider: "pg",
+      provider: "sqlite",
       usePlural: true,
     }),
     baseURL: env.PUBLIC_APP_URL,
