@@ -1,4 +1,5 @@
-import { eq, and, ilike, or, sum, isNull, sql, inArray, getTableColumns } from "drizzle-orm";
+import { eq, and, or, sum, isNull, sql, inArray, getTableColumns } from "drizzle-orm";
+import { ilikeFold } from "../lib/search";
 import { products, productCategories, productVariants, productImages, reviews, stockMovements } from "../db/schema";
 import type { AppDb } from "../db/client";
 import { safeLikeTerm } from "./search";
@@ -162,8 +163,8 @@ export async function getAllProducts(db: AppDb, filters?: ProductFilters) {
   if (filters?.search) {
     const term = `%${safeLikeTerm(filters.search)}%`;
     conditions.push(or(
-      ilike(products.name, term),
-      ilike(products.handle, term),
+      ilikeFold(products.name, term),
+      ilikeFold(products.handle, term),
     ) as any);
   }
 

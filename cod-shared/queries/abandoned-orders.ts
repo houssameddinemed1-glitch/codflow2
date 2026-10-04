@@ -2,7 +2,8 @@
  * Abandoned Orders Queries
  */
 
-import { eq, and, desc, lt, sql, ilike, or, inArray, ne } from "drizzle-orm";
+import { eq, and, desc, lt, sql, or, inArray, ne } from "drizzle-orm";
+import { ilikeFold } from "../lib/search";
 import { abandonedOrders, wilayas, communes } from "../db/schema";
 import type { AppDb } from "../db/client";
 import { safeLikeTerm } from "./search";
@@ -403,8 +404,8 @@ export async function listAbandonedOrders(
     const term = `%${safeLikeTerm(search)}%`;
     conditions.push(
       or(
-        ilike(abandonedOrders.customerName, term),
-        ilike(abandonedOrders.phone, term)
+        ilikeFold(abandonedOrders.customerName, term),
+        ilikeFold(abandonedOrders.phone, term)
       )
     );
   }

@@ -1,4 +1,5 @@
-import { eq, and, ilike, sql } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
+import { ilikeFold } from "../lib/search";
 import { customerGroups, customerGroupMembers, customers } from "../db/schema";
 import type { AppDb } from "../db/client";
 
@@ -23,7 +24,7 @@ export interface UpdateCustomerGroupData {
 export async function getAllGroups(db: AppDb, filters?: CustomerGroupFilters) {
   const conditions = [];
   if (filters?.search) {
-    conditions.push(ilike(customerGroups.name, `%${filters.search}%`));
+    conditions.push(ilikeFold(customerGroups.name, `%${filters.search}%`));
   }
 
   const limit = filters?.limit ?? 50;

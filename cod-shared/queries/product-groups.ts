@@ -1,4 +1,5 @@
-import { eq, and, ilike, count, isNull } from "drizzle-orm";
+import { eq, and, count, isNull } from "drizzle-orm";
+import { ilikeFold } from "../lib/search";
 import { productCategories, products } from "../db/schema";
 import type { AppDb } from "../db/client";
 
@@ -37,7 +38,7 @@ function toSlug(name: string, id: string) {
 
 export async function getAllGroups(db: AppDb, filters?: GroupFilters) {
   const conditions = [];
-  if (filters?.search) conditions.push(ilike(productCategories.name, `%${filters.search}%`));
+  if (filters?.search) conditions.push(ilikeFold(productCategories.name, `%${filters.search}%`));
   if (filters?.parentId) conditions.push(eq(productCategories.parentId, filters.parentId));
 
   const rows = await db

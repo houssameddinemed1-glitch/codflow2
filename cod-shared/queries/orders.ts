@@ -37,6 +37,7 @@ import {
   getTableColumns,
   aliasedTable,
 } from "drizzle-orm";
+import { ilikeFold } from "../lib/search";
 
 const driversAlias = aliasedTable(drivers, "d");
 
@@ -110,9 +111,9 @@ export async function getAllOrders(db: AppDb, filters: OrderFilters = {}) {
     const term = `%${safeLikeTerm(filters.search)}%`;
     conditions.push(
       or(
-        ilike(orders.orderNumber, term),
-        ilike(orders.customerName, term),
-        ilike(orders.phone, term),
+        ilikeFold(orders.orderNumber, term),
+        ilikeFold(orders.customerName, term),
+        ilikeFold(orders.phone, term),
       ),
     );
   }
@@ -382,7 +383,7 @@ export async function updateOrderStatus(
       db
         .update(customers)
         .set({
-          totalSpent: sql`GREATEST(0, ${customers.totalSpent} - ${order?.price ?? 0})`,
+          totalSpent: sql`MAX(0, ${customers.totalSpent} - ${order?.price ?? 0})`,
         })
         .where(eq(customers.id, order?.customerId ?? "")),
     );
@@ -880,11 +881,11 @@ export async function deleteOrder(db: AppDb, orderId: string) {
       db
         .update(customers)
         .set({
-          totalOrders: sql`GREATEST(0, ${customers.totalOrders} - 1)`,
+          totalOrders: sql`MAX(0, ${customers.totalOrders} - 1)`,
           ...(spendAlreadyRolledBack
             ? {}
             : {
-                totalSpent: sql`GREATEST(0, ${customers.totalSpent} - ${order.price ?? 0})`,
+                totalSpent: sql`MAX(0, ${customers.totalSpent} - ${order.price ?? 0})`,
               }),
         })
         .where(eq(customers.id, order.customerId)),
@@ -902,9 +903,9 @@ export async function deleteOrder(db: AppDb, orderId: string) {
       db
         .update(drivers)
         .set({
-          totalDelivered: sql`GREATEST(0, ${drivers.totalDelivered} - 1)`,
-          totalEarnings: sql`GREATEST(0, ${drivers.totalEarnings} - ${order.driverFee ?? 0})`,
-          pendingCash: sql`GREATEST(0, ${drivers.pendingCash} - ${order.codAmount ?? 0})`,
+          totalDelivered: sql`MAX(0, ${drivers.totalDelivered} - 1)`,
+          totalEarnings: sql`MAX(0, ${drivers.totalEarnings} - ${order.driverFee ?? 0})`,
+          pendingCash: sql`MAX(0, ${drivers.pendingCash} - ${order.codAmount ?? 0})`,
           updatedAt: now,
         })
         .where(eq(drivers.id, order.driverId)),
@@ -1156,7 +1157,7 @@ export async function updateOrderStatusWebhook(
           db
             .update(customers)
             .set({
-              totalSpent: sql`GREATEST(0, ${customers.totalSpent} - ${order.price ?? 0})`,
+              totalSpent: sql`MAX(0, ${customers.totalSpent} - ${order.price ?? 0})`,
             })
             .where(eq(customers.id, order.customerId)),
         ]

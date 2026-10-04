@@ -1,4 +1,5 @@
-import { eq, and, ilike, sql } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
+import { ilikeFold } from "../lib/search";
 import { customerTags, customerTagAssignments, customers } from "../db/schema";
 import type { AppDb } from "../db/client";
 
@@ -21,7 +22,7 @@ export interface UpdateCustomerTagData {
 export async function getAllTags(db: AppDb, filters?: CustomerTagFilters) {
   const conditions = [];
   if (filters?.search) {
-    conditions.push(ilike(customerTags.name, `%${filters.search}%`));
+    conditions.push(ilikeFold(customerTags.name, `%${filters.search}%`));
   }
 
   const limit = filters?.limit ?? 50;

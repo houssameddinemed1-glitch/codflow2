@@ -9,7 +9,8 @@
  * deleteDriver stays in cod-server because it raises ConflictError.
  */
 
-import { eq, and, ilike, or, count, sql, desc, exists, inArray } from "drizzle-orm";
+import { eq, and, or, count, sql, desc, exists, inArray } from "drizzle-orm";
+import { ilikeFold } from "../lib/search";
 import { drivers, driverCompensations, wilayas, orders } from "../db/schema";
 import type { AppDb } from "../db/client";
 import { safeLikeTerm } from "./search";
@@ -57,9 +58,9 @@ export async function getAllDrivers(db: AppDb, filters?: DriverFilters) {
     const term = `%${safeLikeTerm(filters.search)}%`;
     conditions.push(
       or(
-        ilike(drivers.firstName, term),
-        ilike(drivers.lastName, term),
-        ilike(drivers.phone, term),
+        ilikeFold(drivers.firstName, term),
+        ilikeFold(drivers.lastName, term),
+        ilikeFold(drivers.phone, term),
       ),
     );
   }

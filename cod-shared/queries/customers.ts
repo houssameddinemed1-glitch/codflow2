@@ -4,7 +4,8 @@
  * deleteCustomer stays in cod-server because it raises BusinessLogicError.
  */
 
-import { eq, and, ilike, or, desc, exists, sql } from "drizzle-orm";
+import { eq, and, or, desc, exists, sql } from "drizzle-orm";
+import { ilikeFold } from "../lib/search";
 import {
   customers,
   orders,
@@ -57,8 +58,8 @@ export async function getAllCustomers(db: AppDb, filters?: CustomerFilters) {
     const term = `%${safeLikeTerm(filters.search)}%`;
     conditions.push(
       or(
-        ilike(customers.name, term),
-        ilike(customers.phone, term),
+        ilikeFold(customers.name, term),
+        ilikeFold(customers.phone, term),
       ),
     );
   }

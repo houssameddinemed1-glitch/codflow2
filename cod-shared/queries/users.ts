@@ -6,7 +6,8 @@
  * cod-server so they can invoke the scope cache.
  */
 
-import { eq, and, ilike, or } from "drizzle-orm";
+import { eq, and, or } from "drizzle-orm";
+import { ilikeFold } from "../lib/search";
 import { users, userScopes } from "../db/schema";
 import type { AppDb } from "../db/client";
 
@@ -41,8 +42,8 @@ export async function getAllUsers(db: AppDb, filters?: UserFilters) {
   if (filters?.search) {
     conditions.push(
       or(
-        ilike(users.name, `%${filters.search}%`),
-        ilike(users.email, `%${filters.search}%`),
+        ilikeFold(users.name, `%${filters.search}%`),
+        ilikeFold(users.email, `%${filters.search}%`),
       ),
     );
   }
