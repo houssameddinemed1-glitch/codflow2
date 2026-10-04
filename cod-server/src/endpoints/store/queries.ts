@@ -7,6 +7,8 @@ export { getCheckoutFormPolicy } from "../../../../cod-shared/queries/checkout-f
 export {
   getLandingPageBySlug,
   getLandingPageDetailBySlug,
+  getLandingPagePickHandles,
   incrementLandingPageViews,
   findPublishedLandingPageIdBySlug,
 } from "../../../../cod-shared/queries/landing-pages";
+export { resolvePublishedPage } from "../../../../cod-shared/queries/store-pages";

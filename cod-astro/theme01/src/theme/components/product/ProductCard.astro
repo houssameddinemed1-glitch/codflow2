@@ -12,9 +12,11 @@ interface Props {
   currencySymbol?: string;
   eager?: boolean;
   content?: StoreFrontContent;
+  /** Link override — the multi landing grid points at the product's order form. */
+  href?: string;
 }
 
-const { product, currencySymbol = "دج", eager = false, content } = Astro.props;
+const { product, currencySymbol = "دج", eager = false, content, href } = Astro.props;
 
 const image        = product.coverImage ?? product.images?.[0];
 const hasDiscount  = product.compareAtPrice != null && product.compareAtPrice > product.price;
@@ -30,7 +32,7 @@ const lowStockTx   = content?.lowStock
 ---
 
 <a
-  href={`/products/${product.handle}`}
+  href={href ?? `/products/${product.handle}`}
   data-astro-prefetch="hover"
   class="product-card group flex flex-col rounded-2xl overflow-hidden active:scale-[0.97]"
   style="background: var(--clr-surface)"

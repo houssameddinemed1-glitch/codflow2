@@ -137,7 +137,7 @@ async function buildProductDetail(db: PgDb, productId: string) {
     images,
     variantsCount: parsedVariants.length,
     totalInventory,
-    descriptionPlain: await deriveDescriptionPlain(product.description, product.descriptionFormat),
+    descriptionPlain: await deriveDescriptionPlain(product.description, normaliseFormat(product.descriptionFormat)),
   };
 }
 
@@ -221,7 +221,7 @@ export async function getAllProducts(db: PgDb, filters?: ProductFilters) {
       variants: variants.map((v) => ({ ...v, variations: JSON.parse(v.variations) as Record<string, string> })),
       reviewCount,
       avgRating,
-      descriptionPlain: await deriveDescriptionPlain(p.description, p.descriptionFormat),
+      descriptionPlain: await deriveDescriptionPlain(p.description, normaliseFormat(p.descriptionFormat)),
     };
   }));
 }

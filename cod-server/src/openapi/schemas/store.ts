@@ -358,6 +358,10 @@ export const StoreLandingPageSchema = z
     slug: z.string().openapi({ example: "lp-9f3a2b1c" }),
     name: z.string().openapi({ example: "Zinc v3 — carousel ad" }),
     status: z.enum(["draft", "published", "archived"]).openapi({ example: "published" }),
+    kind: z.enum(["single", "multi"]).openapi({
+      description: "single = image stack + COD form; multi = picker grid of product cards",
+      example: "single",
+    }),
     imageGap: z.number().int().openapi({ description: "Pixels between stacked images", example: 0 }),
     metaTitle: z.string().nullable().openapi({ example: "Samsung A55 — عرض خاص" }),
     metaDescription: z.string().nullable().openapi({ example: "اطلب الآن — الدفع عند الاستلام" }),
@@ -375,6 +379,10 @@ export const StoreLandingPageSchema = z
     product: StoreProductDetailSchema.nullable().openapi({
       description:
         "The product in its full store-product shape — the landing page renders the same data the product page does, so the order form works unmodified. Null when the product is no longer publicly visible.",
+    }),
+    products: z.array(StoreProductDetailSchema).openapi({
+      description:
+        "The ordered picks of a multi page in full store-product shape (empty for single pages). Each card links to its product's order form.",
     }),
     tracking: StorePublicTrackingSchema.openapi({
       description:

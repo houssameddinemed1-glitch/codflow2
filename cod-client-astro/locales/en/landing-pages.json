@@ -51,7 +51,13 @@
     "pick": "Select",
     "creating": "Creating…",
     "empty": "No products found",
-    "error_no_product": "Pick a product to continue"
+    "error_no_product": "Pick a product to continue",
+    "mode_single": "Single product",
+    "mode_multi": "Multi product",
+    "multi_hint": "Pick 2 or more products — shoppers choose one, then land on its order form.",
+    "selected_count": "{n} selected",
+    "create_multi": "Create multi page",
+    "error_min_two": "Pick at least 2 products for a multi page"
   },
   "studio": {
     "title": "Landing page studio",
@@ -78,6 +84,10 @@
     "slug_edit": "Edit slug",
     "slug_apply": "Apply",
     "slug_invalid": "3-60 chars: lowercase letters, digits, hyphens",
-    "gap_hint": "Space between the stacked images"
+    "gap_hint": "Space between the stacked images",
+    "products_title": "Products",
+    "products_hint": "Shoppers pick one card, then land on its order form. The first product is the cover.",
+    "products_empty": "No products picked yet",
+    "product_add": "Add"
   }
 }

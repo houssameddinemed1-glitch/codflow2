@@ -14,11 +14,15 @@ import {
   createLandingPageSchema,
   updateLandingPageSchema,
   landingPageTrackingSchema,
+  setLandingPageProductsSchema,
+  addLandingPageProductSchema,
+  reorderLandingPageProductsSchema,
 } from "./validation";
 import {
   LandingPageSchema,
   LandingPageListItemSchema,
   LandingPageImageSchema,
+  LandingPageProductSchema,
   LandingPageTrackingSchema,
   LandingPageTrackingStateSchema,
   ListResponseSchema,
@@ -122,6 +126,8 @@ const createLandingPageRoute = defineRoute({
   tags: ["Landing Pages"],
   summary: "Create landing page",
   description: `Create a draft landing page for a product. The slug defaults to \`lp-<8 chars>\` and is editable later. The page charges the product's catalog price — there is no price override (the price story lives in the images).
+
+**Multi pages:** pass \`kind: "multi"\` with ordered \`productIds\` (max 50) to build a picker grid instead of the image stack + form. The cover product (\`productId\`) should be the first pick — list/compare keep rendering through it.
 
 **Validation:** the product must exist; a taken slug returns 409.`,
   operationId: "createLandingPage",
@@ -372,6 +378,88 @@ const deleteLandingPageImageRoute = defineRoute({
   handler: h.deleteLandingPageImage,
 });
 
+// ─── Multi-product picks ────────────────────────────────────────────────────
+
+const productIdParams = z.object({
+  id: z.string().openapi({ description: "Landing Page UUID", example: "lp_abc123" }),
+  productId: z.string().openapi({ description: "Picked Product UUID", example: "prod_abc123" }),
+});
+
+const listLandingPageProductsRoute = defineRoute({
+  method: "get",
+  path: "/{id}/products",
+  auth: { scope: SCOPES.LANDING_PAGES_READ },
+  tags: ["Landing Pages"],
+  summary: "List landing page products",
+  description: "The ordered pick list of a multi page (1 = top of the grid). Empty for single pages.",
+  operationId: "listLandingPageProducts",
+  params: idParams,
+  handler: h.listLandingPageProducts,
+});
+
+const setLandingPageProductsRoute = defineRoute({
+  method: "put",
+  path: "/{id}/products",
+  auth: { scope: SCOPES.LANDING_PAGES_MANAGE },
+  tags: ["Landing Pages"],
+  summary: "Replace landing page products",
+  description: "Replace the whole pick list of a multi page. Every picked product must exist; the first pick becomes the cover product. Refused on single pages.",
+  operationId: "setLandingPageProducts",
+  params: idParams,
+  body: setLandingPageProductsSchema,
+  handler: h.setLandingPageProducts,
+});
+
+const addLandingPageProductRoute = defineRoute({
+  method: "post",
+  path: "/{id}/products",
+  auth: { scope: SCOPES.LANDING_PAGES_MANAGE },
+  tags: ["Landing Pages"],
+  summary: "Add landing page product",
+  description: "Append one product to a multi page's picks. Already-picked is a no-op returning the unchanged list. Refused on single pages.",
+  operationId: "addLandingPageProduct",
+  params: idParams,
+  body: addLandingPageProductSchema,
+  handler: h.addLandingPageProduct,
+});
+
+const removeLandingPageProductRoute = defineRoute({
+  method: "delete",
+  path: "/{id}/products/{productId}",
+  auth: { scope: SCOPES.LANDING_PAGES_MANAGE },
+  tags: ["Landing Pages"],
+  summary: "Remove landing page product",
+  description: "Remove one pick from a multi page. The last pick cannot be removed — replace it via PUT instead. Removing the cover product advances the cover to the next pick.",
+  operationId: "removeLandingPageProduct",
+  params: productIdParams,
+  handler: h.removeLandingPageProduct,
+});
+
+const reorderLandingPageProductsRoute = defineRoute({
+  method: "patch",
+  path: "/{id}/products/reorder",
+  auth: { scope: SCOPES.LANDING_PAGES_MANAGE },
+  tags: ["Landing Pages"],
+  summary: "Reorder landing page products",
+  description: "Set the grid order. Send the complete ordered array of picked product IDs — every pick exactly once. The first pick becomes the cover product.",
+  operationId: "reorderLandingPageProducts",
+  params: idParams,
+  body: reorderLandingPageProductsSchema,
+  responses: {
+    200: {
+      description: "Products reordered — returns the picks in new order",
+      content: jsonContent(
+        z.object({
+          success: z.boolean().openapi({ example: true }),
+          data: z.array(LandingPageProductSchema),
+        }),
+      ),
+    },
+    422: { description: "Duplicate IDs, foreign IDs, or incomplete set" },
+  },
+  handler: h.reorderLandingPageProducts,
+});
+
 // ─── Router ───────────────────────────────────────────────────────────────────
 
 const router = new OpenAPIHono<AppContext>();
@@ -390,6 +478,11 @@ router.openapi(listLandingPageImagesRoute.route, listLandingPageImagesRoute.hand
 router.openapi(saveLandingPageImageRoute.route, saveLandingPageImageRoute.handler);
 router.openapi(reorderLandingPageImagesRoute.route, reorderLandingPageImagesRoute.handler);
 router.openapi(deleteLandingPageImageRoute.route, deleteLandingPageImageRoute.handler);
+router.openapi(listLandingPageProductsRoute.route, listLandingPageProductsRoute.handler);
+router.openapi(setLandingPageProductsRoute.route, setLandingPageProductsRoute.handler);
+router.openapi(addLandingPageProductRoute.route, addLandingPageProductRoute.handler);
+router.openapi(removeLandingPageProductRoute.route, removeLandingPageProductRoute.handler);
+router.openapi(reorderLandingPageProductsRoute.route, reorderLandingPageProductsRoute.handler);
 
 // ─── Tracking override ─────────────────────────────────────────────────────
 

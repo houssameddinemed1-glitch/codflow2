@@ -7,6 +7,9 @@ import {
   updateLandingPageSchema,
   saveLandingPageImageSchema,
   reorderLandingPageImagesSchema,
+  setLandingPageProductsSchema,
+  addLandingPageProductSchema,
+  reorderLandingPageProductsSchema,
   landingPageTrackingSchema,
 } from "./validation";
 import { NotFoundError, SystemError, ValidationError } from "@/lib/errors/classes";
@@ -310,6 +313,81 @@ export async function deleteLandingPageImage(c: Context<AppContext>) {
 
   await queries.deleteLandingPageImage(db, id, imageId);
   return c.json({ success: true }, 200);
+}
+
+export async function listLandingPageProducts(c: Context<AppContext>) {
+  const db = getDb(c.env.DB);
+  const id = c.req.param("id")!;
+  const existing = await queries.getLandingPageById(db, id);
+  if (!existing) throw new NotFoundError("Landing Page", id);
+  const data = await queries.getLandingPageProducts(db, id);
+  return c.json({ success: true, data, count: data.length }, 200);
+}
+
+export async function setLandingPageProducts(c: Context<AppContext>) {
+  const db = getDb(c.env.DB);
+  const id = c.req.param("id")!;
+
+  const existing = await queries.getLandingPageById(db, id);
+  if (!existing) throw new NotFoundError("Landing Page", id);
+
+  const body: any = (c.req as any).valid?.("json");
+  const data = body ?? setLandingPageProductsSchema.parse(await c.req.json());
+  const rows = await queries.setLandingPageProductsChecked(db, id, data.productIds);
+
+  const actor = c.get("user");
+  await logActivity(db, actor, ACTIONS.LANDING_PAGE_UPDATED, {
+    type: "landing_page", id, label: existing.name,
+  }, { action: "products_set", productIds: data.productIds });
+
+  return c.json({ success: true, data: rows, count: rows.length }, 200);
+}
+
+export async function addLandingPageProduct(c: Context<AppContext>) {
+  const db = getDb(c.env.DB);
+  const id = c.req.param("id")!;
+
+  const existing = await queries.getLandingPageById(db, id);
+  if (!existing) throw new NotFoundError("Landing Page", id);
+
+  const body: any = (c.req as any).valid?.("json");
+  const data = body ?? addLandingPageProductSchema.parse(await c.req.json());
+  const rows = await queries.addLandingPageProductChecked(db, id, data.productId);
+
+  const actor = c.get("user");
+  await logActivity(db, actor, ACTIONS.LANDING_PAGE_UPDATED, {
+    type: "landing_page", id, label: existing.name,
+  }, { action: "product_added", productId: data.productId });
+
+  return c.json({ success: true, data: rows, count: rows.length }, 201);
+}
+
+export async function removeLandingPageProduct(c: Context<AppContext>) {
+  const db = getDb(c.env.DB);
+  const id = c.req.param("id")!;
+  const productId = c.req.param("productId")!;
+
+  const rows = await queries.removeLandingPageProductChecked(db, id, productId);
+  return c.json({ success: true, data: rows, count: rows.length }, 200);
+}
+
+export async function reorderLandingPageProducts(c: Context<AppContext>) {
+  const db = getDb(c.env.DB);
+  const id = c.req.param("id")!;
+
+  const existing = await queries.getLandingPageById(db, id);
+  if (!existing) throw new NotFoundError("Landing Page", id);
+
+  const body: any = (c.req as any).valid?.("json");
+  const data = body ?? reorderLandingPageProductsSchema.parse(await c.req.json());
+  const rows = await queries.reorderLandingPageProductsChecked(db, id, data.productIds);
+
+  const actor = c.get("user");
+  await logActivity(db, actor, ACTIONS.LANDING_PAGE_UPDATED, {
+    type: "landing_page", id, label: existing.name,
+  }, { action: "products_reordered", order: data.productIds });
+
+  return c.json({ success: true, data: rows, count: rows.length }, 200);
 }
 
 /**

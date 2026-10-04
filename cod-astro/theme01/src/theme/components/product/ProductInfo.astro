@@ -26,7 +26,11 @@ function fmt(n: number) {
   </h1>
   
   {product.description && (
-    <div class:list={[isDesktop ? "text-[1.0625rem] mb-6" : "text-[0.9375rem] mb-4", "product-rich font-medium leading-relaxed"]} style="color: var(--clr-text-2)" set:html={product.description} />
+    product.descriptionFormat === "html" ? (
+      <div class:list={[isDesktop ? "text-[1.0625rem] mb-6" : "text-[0.9375rem] mb-4", "product-rich font-medium leading-relaxed"]} style="color: var(--clr-text-2)" set:html={product.description} />
+    ) : (
+      <p class:list={[isDesktop ? "text-[1.0625rem] mb-6" : "text-[0.9375rem] mb-4", "font-medium leading-relaxed whitespace-pre-line"]} style="color: var(--clr-text-2)">{product.description}</p>
+    )
   )}
 
   <div class="flex items-baseline gap-4">

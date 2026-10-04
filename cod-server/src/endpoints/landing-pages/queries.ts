@@ -36,6 +36,25 @@ export async function createLandingPage(db: AppDb, data: CreateLandingPageData) 
     throw new NotFoundError("Product", data.productId);
   }
 
+  const kind = data.kind ?? "single";
+  const productIds = data.productIds ?? [];
+  if (kind === "multi") {
+    if (productIds.length === 0) {
+      throw new ValidationError(
+        "A multi landing page needs at least one product",
+        ERROR_CODES.VALIDATION_FAILED,
+        { kind },
+      );
+    }
+    await assertProductsExist(db, productIds);
+  } else if (productIds.length > 0) {
+    throw new ValidationError(
+      "productIds is only accepted for multi landing pages",
+      ERROR_CODES.VALIDATION_FAILED,
+      { kind },
+    );
+  }
+
   // Slug uniqueness is a friendly 409, not a raw constraint crash.
   if (data.slug && (await shared.slugExists(db, data.slug))) {
     throw new ConflictError(
@@ -141,4 +160,120 @@ export async function reorderLandingPageImagesChecked(
   }
 
   return shared.reorderLandingPageImages(db, landingPageId, imageIds);
+}
+
+async function assertProductsExist(db: AppDb, productIds: string[]) {
+  const missing: string[] = [];
+  for (const productId of new Set(productIds)) {
+    const row = await db
+      .select({ id: products.id })
+      .from(products)
+      .where(eq(products.id, productId))
+      .then((rows) => rows[0] ?? null);
+    if (!row) missing.push(productId);
+  }
+  if (missing.length > 0) {
+    throw new NotFoundError("Product", missing[0]);
+  }
+}
+
+async function getMultiPage(db: AppDb, landingPageId: string) {
+  const page = await shared.getLandingPageById(db, landingPageId);
+  if (!page) throw new NotFoundError("Landing Page", landingPageId);
+  if (page.kind !== "multi") {
+    throw new ValidationError(
+      "Product picks are only managed on multi landing pages",
+      ERROR_CODES.VALIDATION_FAILED,
+      { landingPageId, kind: page.kind },
+    );
+  }
+  return page;
+}
+
+export async function setLandingPageProductsChecked(
+  db: AppDb,
+  landingPageId: string,
+  productIds: string[],
+) {
+  const page = await getMultiPage(db, landingPageId);
+  if (productIds.length === 0) {
+    throw new ValidationError(
+      "A multi landing page needs at least one product",
+      ERROR_CODES.VALIDATION_FAILED,
+      { landingPageId },
+    );
+  }
+  await assertProductsExist(db, productIds);
+  const rows = await shared.setLandingPageProducts(db, landingPageId, productIds);
+  const first = rows[0]?.productId;
+  if (first && first !== page.productId) {
+    await shared.updateLandingPageCover(db, landingPageId, first);
+  }
+  return rows;
+}
+
+export async function addLandingPageProductChecked(
+  db: AppDb,
+  landingPageId: string,
+  productId: string,
+) {
+  await getMultiPage(db, landingPageId);
+  await assertProductsExist(db, [productId]);
+  return shared.addLandingPageProduct(db, landingPageId, productId);
+}
+
+export async function removeLandingPageProductChecked(
+  db: AppDb,
+  landingPageId: string,
+  productId: string,
+) {
+  const page = await getMultiPage(db, landingPageId);
+  const remaining = page.productIds.filter((id) => id !== productId);
+  if (remaining.length === 0) {
+    throw new ValidationError(
+      "A multi landing page needs at least one product — add a replacement before removing this one",
+      ERROR_CODES.VALIDATION_FAILED,
+      { landingPageId },
+    );
+  }
+  await shared.removeLandingPageProduct(db, landingPageId, productId);
+  if (page.productId === productId && remaining[0] !== page.productId) {
+    await shared.updateLandingPageCover(db, landingPageId, remaining[0]);
+  }
+  return shared.getLandingPageProducts(db, landingPageId);
+}
+
+export async function reorderLandingPageProductsChecked(
+  db: AppDb,
+  landingPageId: string,
+  productIds: string[],
+) {
+  const page = await getMultiPage(db, landingPageId);
+
+  if (new Set(productIds).size !== productIds.length) {
+    throw new ValidationError(
+      "productIds must not contain duplicates",
+      ERROR_CODES.VALIDATION_FAILED,
+      { received: productIds.length },
+    );
+  }
+  const existing = new Set(page.productIds);
+  for (const productId of productIds) {
+    if (!existing.has(productId)) {
+      throw new ValidationError(
+        `Product ${productId} is not picked on landing page ${landingPageId}`,
+        ERROR_CODES.VALIDATION_FAILED,
+        { productId, landingPageId },
+      );
+    }
+  }
+  if (productIds.length !== page.productIds.length) {
+    throw new ValidationError(
+      "productIds must include all picked products for this landing page",
+      ERROR_CODES.VALIDATION_FAILED,
+      { expected: page.productIds.length, received: productIds.length },
+    );
+  }
+
+  return shared.reorderLandingPageProducts(db, landingPageId, productIds);
 }

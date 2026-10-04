@@ -50,6 +50,7 @@ export const ProductSchema = z.object({
   id: z.string(),
   name: z.string(),
   description: z.string().nullable(),
+  descriptionFormat: z.enum(["text", "html"]).nullable().optional(),
   handle: z.string(),
   price: z.number(),
   compareAtPrice: z.number().nullable(),

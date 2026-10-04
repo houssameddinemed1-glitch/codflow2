@@ -17,6 +17,8 @@ interface ProductBasicInfoCardProps {
   setShippingProfileId: (val: string) => void;
   description: string;
   setDescription: (val: string) => void;
+  descriptionFormat: "text" | "html";
+  setDescriptionFormat: (val: "text" | "html") => void;
   groups: Array<{ id: string; name: string }>;
   shippingProfiles: ShippingProfile[];
   errors: Record<string, string>;
@@ -38,6 +40,8 @@ export function ProductBasicInfoCard({
   setShippingProfileId,
   description,
   setDescription,
+  descriptionFormat,
+  setDescriptionFormat,
   groups,
   shippingProfiles,
   errors,
@@ -123,6 +127,19 @@ export function ProductBasicInfoCard({
           )}
         </div>
         <Field label={t("form.description_label")} hint={t("form.description_hint")}>
+          <div className="mb-2 inline-flex rounded-lg border border-input p-0.5 text-xs font-semibold" role="group" aria-label={t("form.description_format_label")}>
+            {(["text", "html"] as const).map((format) => (
+              <button
+                key={format}
+                type="button"
+                onClick={() => setDescriptionFormat(format)}
+                aria-pressed={descriptionFormat === format}
+                className={`rounded-md px-2.5 py-1 transition-colors ${descriptionFormat === format ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                {t(`form.description_format_${format}`)}
+              </button>
+            ))}
+          </div>
           <RichTextEditor
             value={description}
             onChange={setDescription}

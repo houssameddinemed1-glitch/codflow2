@@ -8,6 +8,21 @@ import { z } from "@hono/zod-openapi";
 
 export const LandingPageStatusEnum = z.enum(["draft", "published", "archived"]);
 
+export const LandingPageKindEnum = z.enum(["single", "multi"]);
+
+export const LandingPageProductSchema = z
+  .object({
+    id: z.string().openapi({ example: "lpp_abc123" }),
+    landingPageId: z.string().openapi({ example: "lp_abc123" }),
+    productId: z.string().openapi({ example: "prod_abc123" }),
+    position: z.number().int().min(1).openapi({
+      description: "Grid order (1 = top)",
+      example: 1,
+    }),
+    createdAt: z.string().datetime(),
+  })
+  .openapi("LandingPageProduct");
+
 export const LandingPageStatsSchema = z
   .object({
     views: z.number().int().min(0).openapi({ example: 1240 }),
@@ -79,6 +94,10 @@ export const LandingPageSchema = z
       example: "Zinc v3 — carousel ad",
     }),
     productId: z.string().openapi({ example: "prod_abc123" }),
+    kind: LandingPageKindEnum.openapi({
+      description: "single = image stack + COD form; multi = picker grid of product cards",
+      example: "single",
+    }),
     status: LandingPageStatusEnum.openapi({
       description: "draft → published → archived. Only published pages resolve publicly.",
       example: "published",
@@ -104,6 +123,9 @@ export const LandingPageSchema = z
     product: productRef.openapi({
       description: "The single product this page sells",
     }),
+    productIds: z.array(z.string()).openapi({
+      description: "Ordered picks of a multi page (empty for single pages)",
+    }),
     stats: LandingPageStatsSchema,
   })
   .openapi("LandingPage");
@@ -114,6 +136,10 @@ export const LandingPageListItemSchema = z
     slug: z.string().openapi({ example: "lp-9f3a2b1c" }),
     name: z.string().openapi({ example: "Zinc v3 — carousel ad" }),
     status: LandingPageStatusEnum,
+    kind: LandingPageKindEnum.openapi({
+      description: "single = image stack + COD form; multi = picker grid",
+      example: "single",
+    }),
     productId: z.string().openapi({ example: "prod_abc123" }),
     productName: z.string().nullable().openapi({ example: "Samsung Galaxy A55" }),
     productHandle: z.string().nullable().openapi({ example: "samsung-galaxy-a55" }),

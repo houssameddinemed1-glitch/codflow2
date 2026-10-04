@@ -54,6 +54,7 @@ export interface Product {
   id: string;
   name: string;
   description?: string | null;
+  descriptionFormat?: "text" | "html" | null;
   handle: string;
   currency: string;
   price: number;

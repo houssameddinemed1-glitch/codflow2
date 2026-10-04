@@ -8,6 +8,10 @@ const landingPageBaseSchema = z.object({
     .regex(/^[a-z0-9-]{3,60}$/, "Slug must be 3-60 chars: lowercase letters, digits, hyphens")
     .optional(),
   productId: z.string().min(1),
+  /** Page shape: single = image stack + COD form; multi = picker grid. */
+  kind: z.enum(["single", "multi"]).optional(),
+  /** Initial picks for a multi page — ordered, first doubles as the cover product. */
+  productIds: z.array(z.string().min(1)).min(1).max(50).optional(),
   /** Pixels between stacked images — the only spacing setting. */
   imageGap: z.number().int().min(0).max(200).default(0),
   metaTitle: z.string().max(200).nullable().optional(),
@@ -22,6 +26,23 @@ export const updateLandingPageSchema = landingPageBaseSchema
 
 export const reorderLandingPageImagesSchema = z.object({
   imageIds: z
+    .array(z.string().min(1))
+    .min(1),
+});
+
+export const setLandingPageProductsSchema = z.object({
+  productIds: z
+    .array(z.string().min(1))
+    .min(1)
+    .max(50),
+});
+
+export const addLandingPageProductSchema = z.object({
+  productId: z.string().min(1),
+});
+
+export const reorderLandingPageProductsSchema = z.object({
+  productIds: z
     .array(z.string().min(1))
     .min(1),
 });

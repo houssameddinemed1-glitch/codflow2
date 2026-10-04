@@ -5,6 +5,7 @@ import type {
   LandingPage,
   LandingPageImage,
   LandingPageListItem,
+  LandingPageProductPick,
   SaveLandingPageImageInput,
   UpdateLandingPageInput,
 } from "./types";
@@ -104,6 +105,44 @@ export function deleteLandingPageImage(lpId: string, imageId: string) {
     `/api/landing-pages/${id(lpId)}/images/${id(imageId)}`,
     { method: "DELETE" },
   );
+}
+
+export async function listLandingPageProducts(lpId: string) {
+  return (await apiFetch<ListEnvelope<LandingPageProductPick>>(`/api/landing-pages/${id(lpId)}/products`)).data;
+}
+
+export async function setLandingPageProducts(lpId: string, productIds: string[]) {
+  return (
+    await apiFetch<ListEnvelope<LandingPageProductPick>>(
+      `/api/landing-pages/${id(lpId)}/products`,
+      json({ method: "PUT", body: JSON.stringify({ productIds }) }),
+    )
+  ).data;
+}
+
+export async function addLandingPageProduct(lpId: string, productId: string) {
+  return (
+    await apiFetch<ListEnvelope<LandingPageProductPick>>(
+      `/api/landing-pages/${id(lpId)}/products`,
+      json({ method: "POST", body: JSON.stringify({ productId }) }),
+    )
+  ).data;
+}
+
+export function removeLandingPageProduct(lpId: string, productId: string) {
+  return apiFetch<ListEnvelope<LandingPageProductPick>>(
+    `/api/landing-pages/${id(lpId)}/products/${id(productId)}`,
+    { method: "DELETE" },
+  );
+}
+
+export async function reorderLandingPageProducts(lpId: string, productIds: string[]) {
+  return (
+    await apiFetch<ListEnvelope<LandingPageProductPick>>(
+      `/api/landing-pages/${id(lpId)}/products/reorder`,
+      json({ method: "PATCH", body: JSON.stringify({ productIds }) }),
+    )
+  ).data;
 }
 
 export async function getPresignedLandingUploadUrl(contentType: string) {

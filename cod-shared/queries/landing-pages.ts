@@ -11,6 +11,7 @@ import {
   landingPages,
   landingPageImages,
   landingPagePixelConfig,
+  landingPageProducts,
   lpImageUploadJobs,
   orders,
   products,
@@ -52,6 +53,9 @@ export interface CreateLandingPageData {
   name: string;
   slug?: string;
   productId: string;
+  kind?: "single" | "multi";
+  /** Initial picks for a multi page — ordered, first doubles as the cover product. */
+  productIds?: string[];
   imageGap?: number;
   metaTitle?: string | null;
   metaDescription?: string | null;
@@ -235,15 +239,22 @@ export async function getLandingPageById(db: PgDb, id: string) {
       .select({ id: products.id, name: products.name, handle: products.handle, price: products.price })
       .from(products)
       .where(eq(products.id, row.productId)),
+    db
+      .select({ productId: landingPageProducts.productId })
+      .from(landingPageProducts)
+      .where(eq(landingPageProducts.landingPageId, id))
+      .orderBy(landingPageProducts.position),
   ]);
 
   const images = (results[0] as unknown as typeof landingPageImages.$inferSelect[]) ?? [];
   const statsRow = ((results[1] as unknown as Array<Record<string, unknown>>) ?? [])[0];
   const productRow = ((results[2] as unknown as Array<Record<string, unknown>>) ?? [])[0];
+  const pickRows = ((results[3] as unknown as Array<{ productId: string }>) ?? []);
 
   return {
     ...row,
     images,
+    productIds: pickRows.map((r) => r.productId),
     product: productRow
       ? (productRow as unknown as { id: string; name: string; handle: string; price: number })
       : null,
@@ -289,15 +300,22 @@ export async function getLandingPageDetailBySlug(db: PgDb, slug: string) {
       .select({ id: products.id, name: products.name, handle: products.handle, price: products.price })
       .from(products)
       .where(eq(products.id, row.productId)),
+    db
+      .select({ productId: landingPageProducts.productId })
+      .from(landingPageProducts)
+      .where(eq(landingPageProducts.landingPageId, row.id))
+      .orderBy(landingPageProducts.position),
   ]);
 
   const images = (results[0] as unknown as typeof landingPageImages.$inferSelect[]) ?? [];
   const statsRow = ((results[1] as unknown as Array<Record<string, unknown>>) ?? [])[0];
   const productRow = ((results[2] as unknown as Array<Record<string, unknown>>) ?? [])[0];
+  const pickRows = ((results[3] as unknown as Array<{ productId: string }>) ?? []);
 
   return {
     ...row,
     images,
+    productIds: pickRows.map((r) => r.productId),
     product: productRow
       ? (productRow as unknown as { id: string; name: string; handle: string; price: number })
       : null,
@@ -334,6 +352,7 @@ export async function createLandingPage(
     slug,
     name: data.name,
     productId: data.productId,
+    kind: data.kind ?? "single",
     status: "draft",
     imageGap: data.imageGap ?? 0,
     metaTitle: data.metaTitle ?? null,
@@ -342,6 +361,10 @@ export async function createLandingPage(
     createdAt: now,
     updatedAt: now,
   });
+
+  if (data.productIds && data.productIds.length > 0) {
+    await setLandingPageProducts(db, id, data.productIds);
+  }
 
   return { id, slug };
 }
@@ -505,6 +528,144 @@ export async function deleteLandingPageImage(
     );
 }
 
+/** Ordered product ids picked on a multi page (empty for single pages). */
+export async function getLandingPageProducts(db: PgDb, landingPageId: string) {
+  return db
+    .select()
+    .from(landingPageProducts)
+    .where(eq(landingPageProducts.landingPageId, landingPageId))
+    .orderBy(landingPageProducts.position);
+}
+
+/**
+ * Replace the whole pick list: delete + re-insert with 1-based positions in
+ * one transaction, touching the parent so the studio sees the change.
+ * Duplicates are collapsed (first occurrence wins); product existence is the
+ * caller's guard (cod-server wrapper), mirroring the image-reorder split.
+ */
+export async function setLandingPageProducts(
+  db: PgDb,
+  landingPageId: string,
+  productIds: string[],
+) {
+  const now = new Date().toISOString();
+  const deduped = [...new Set(productIds)];
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(landingPageProducts)
+      .where(eq(landingPageProducts.landingPageId, landingPageId));
+    for (const [index, productId] of deduped.entries()) {
+      await tx.insert(landingPageProducts).values({
+        id: crypto.randomUUID(),
+        landingPageId,
+        productId,
+        position: index + 1,
+        createdAt: now,
+      });
+    }
+    await tx
+      .update(landingPages)
+      .set({ updatedAt: now })
+      .where(eq(landingPages.id, landingPageId));
+  });
+  return getLandingPageProducts(db, landingPageId);
+}
+
+/** Append one pick at the end — a no-op when the product is already picked. */
+export async function addLandingPageProduct(
+  db: PgDb,
+  landingPageId: string,
+  productId: string,
+) {
+  const existing = await getLandingPageProducts(db, landingPageId);
+  if (existing.some((r) => r.productId === productId)) return existing;
+  const now = new Date().toISOString();
+  await db.transaction(async (tx) => {
+    await tx.insert(landingPageProducts).values({
+      id: crypto.randomUUID(),
+      landingPageId,
+      productId,
+      position: existing.length + 1,
+      createdAt: now,
+    });
+    await tx
+      .update(landingPages)
+      .set({ updatedAt: now })
+      .where(eq(landingPages.id, landingPageId));
+  });
+  return getLandingPageProducts(db, landingPageId);
+}
+
+export async function removeLandingPageProduct(
+  db: PgDb,
+  landingPageId: string,
+  productId: string,
+) {
+  await db
+    .delete(landingPageProducts)
+    .where(
+      and(
+        eq(landingPageProducts.landingPageId, landingPageId),
+        eq(landingPageProducts.productId, productId),
+      ),
+    );
+}
+
+export async function reorderLandingPageProducts(
+  db: PgDb,
+  landingPageId: string,
+  productIds: string[],
+) {
+  const now = new Date().toISOString();
+  await db.transaction(async (tx) => {
+    for (const [index, productId] of productIds.entries()) {
+      await tx
+        .update(landingPageProducts)
+        .set({ position: index + 1 })
+        .where(
+          and(
+            eq(landingPageProducts.landingPageId, landingPageId),
+            eq(landingPageProducts.productId, productId),
+          ),
+        );
+    }
+    await tx
+      .update(landingPages)
+      .set({ productId: productIds[0], updatedAt: now })
+      .where(eq(landingPages.id, landingPageId));
+  });
+  return getLandingPageProducts(db, landingPageId);
+}
+
+/**
+ * Advance the cover product (landing_pages.product_id) — keeps list/compare
+ * rendering after the first pick changes. Cover is otherwise immutable.
+ */
+export async function updateLandingPageCover(
+  db: PgDb,
+  id: string,
+  productId: string,
+) {
+  await db
+    .update(landingPages)
+    .set({ productId, updatedAt: new Date().toISOString() })
+    .where(eq(landingPages.id, id));
+}
+
+/** Ordered (handle) refs of a multi page's picks — the storefront resolves full shapes per handle. */
+export async function getLandingPagePickHandles(
+  db: PgDb,
+  landingPageId: string,
+): Promise<string[]> {
+  const rows = await db
+    .select({ handle: products.handle })
+    .from(landingPageProducts)
+    .innerJoin(products, eq(landingPageProducts.productId, products.id))
+    .where(eq(landingPageProducts.landingPageId, landingPageId))
+    .orderBy(landingPageProducts.position);
+  return rows.map((r) => r.handle);
+}
+
 /** Landing pages that still exist and are published — the attribution-resolvable set. */
 export async function findPublishedLandingPageIdBySlug(
   db: PgDb,
@@ -547,6 +708,13 @@ export async function duplicateLandingPage(db: PgDb, id: string): Promise<string
     .orderBy(landingPageImages.position)
     ;
 
+  const picks = await db
+    .select()
+    .from(landingPageProducts)
+    .where(eq(landingPageProducts.landingPageId, id))
+    .orderBy(landingPageProducts.position)
+    ;
+
   const newId = crypto.randomUUID();
   const now = new Date().toISOString();
   const slug = generateLandingPageSlug();
@@ -557,6 +725,7 @@ export async function duplicateLandingPage(db: PgDb, id: string): Promise<string
       slug,
       name: `${source.name} (copy)`,
       productId: source.productId,
+      kind: source.kind,
       status: "draft",
       imageGap: source.imageGap,
       metaTitle: source.metaTitle,
@@ -576,6 +745,15 @@ export async function duplicateLandingPage(db: PgDb, id: string): Promise<string
         position: image.position,
         width: image.width,
         height: image.height,
+        createdAt: now,
+      });
+    }
+    for (const pick of picks) {
+      await tx.insert(landingPageProducts).values({
+        id: crypto.randomUUID(),
+        landingPageId: newId,
+        productId: pick.productId,
+        position: pick.position,
         createdAt: now,
       });
     }

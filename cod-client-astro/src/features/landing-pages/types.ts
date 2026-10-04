@@ -13,6 +13,16 @@ export interface LandingPageImage {
 
 export type LandingPageStatus = "draft" | "published" | "archived";
 
+export type LandingPageKind = "single" | "multi";
+
+export interface LandingPageProductPick {
+  id: string;
+  landingPageId: string;
+  productId: string;
+  position: number;
+  createdAt: string;
+}
+
 export interface LandingPageStats {
   views: number;
   orders: number;
@@ -31,6 +41,7 @@ export interface LandingPage {
   slug: string;
   name: string;
   productId: string;
+  kind: LandingPageKind;
   status: LandingPageStatus;
   imageGap: number;
   metaTitle: string | null;
@@ -43,6 +54,8 @@ export interface LandingPage {
   updatedAt: string;
   images: LandingPageImage[];
   product: LandingPageProductRef | null;
+  /** Ordered picks of a multi page (empty for single pages). */
+  productIds: string[];
   stats: LandingPageStats;
 }
 
@@ -50,6 +63,7 @@ export interface LandingPageListItem {
   id: string;
   slug: string;
   name: string;
+  kind: LandingPageKind;
   status: "draft" | "published" | "archived";
   productId: string;
   productName: string | null;
@@ -68,6 +82,8 @@ export interface CreateLandingPageInput {
   name: string;
   slug?: string;
   productId: string;
+  kind?: LandingPageKind;
+  productIds?: string[];
 }
 
 export interface UpdateLandingPageInput {

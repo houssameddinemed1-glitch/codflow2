@@ -21,9 +21,11 @@ interface Props {
   isRTL: boolean;
   fieldErrors: any;
   serverError: string | null;
+  /** Multi-LP attribution (?lp=) — forwarded as the order's landingPageSlug. */
+  landingPageSlug?: string | null;
 }
 
-const { slug, product: preloaded, config, content, isRTL, fieldErrors, serverError } = Astro.props;
+const { slug, product: preloaded, config, content, isRTL, fieldErrors, serverError, landingPageSlug = null } = Astro.props;
 
 // Fetch product data (this component streams when ready).
 // Prefer the page-provided product; fall back to fetching by slug.
@@ -139,6 +141,7 @@ const jsonLd = getProductJsonLd(product, basePrice);
         turnstileSiteKey={config.turnstileSiteKey ?? null}
         variant={config.formVariant ?? null}
         formPolicy={config.checkoutForm}
+        landingPageSlug={landingPageSlug}
       />
     </div>
   </div>

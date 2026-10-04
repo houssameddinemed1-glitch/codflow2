@@ -23,6 +23,9 @@ function Gated() {
   const [query, setQuery] = useState("");
   const [creatingId, setCreatingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [mode, setMode] = useState<"single" | "multi">("single");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [creatingMulti, setCreatingMulti] = useState(false);
 
   const canManage = canScope(identity, SCOPES.LANDING_PAGES_MANAGE);
 
@@ -90,12 +93,70 @@ function Gated() {
       `${product.name} ${product.sku ?? ""}`.toLocaleLowerCase().indexOf(q) !== -1,
   );
 
+  function toggleSelect(productId: string) {
+    setSelectedIds((prev) =>
+      prev.includes(productId) ? prev.filter((id) => id !== productId) : [...prev, productId],
+    );
+  }
+
+  async function onCreateMulti() {
+    if (creatingMulti || creatingId) return;
+    const picks = selectedIds
+      .map((id) => (products ?? []).find((p) => p.id === id))
+      .filter((p): p is Product => Boolean(p));
+    if (picks.length < 2) {
+      const message = t("new.error_min_two");
+      setActionError(message);
+      notify.error(message);
+      return;
+    }
+    setCreatingMulti(true);
+    setActionError(null);
+    try {
+      const created = await createLandingPage({
+        name: picks[0].name,
+        productId: picks[0].id,
+        kind: "multi",
+        productIds: picks.map((p) => p.id),
+      });
+      window.location.assign(
+        `/landing-pages/${encodeURIComponent(created.data.id)}/studio`,
+      );
+    } catch (cause) {
+      const message = landingPageErrorMessage(cause, t);
+      setActionError(message);
+      notify.error(message);
+      setCreatingMulti(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
       {actionError && (
         <Alert role="alert" tone="critical">
           <span className="flex-1">{actionError}</span>
         </Alert>
+      )}
+      <div className="flex gap-2" role="tablist" aria-label={t("new.title")}>
+        {(["single", "multi"] as const).map((m) => (
+          <button
+            key={m}
+            type="button"
+            role="tab"
+            aria-selected={mode === m}
+            onClick={() => setMode(m)}
+            className={`h-9 flex-1 rounded-xl border text-sm font-bold transition ${
+              mode === m
+                ? "border-brand bg-brand/10 text-brand"
+                : "border-border bg-card text-muted-foreground"
+            }`}
+          >
+            {t(m === "single" ? "new.mode_single" : "new.mode_multi")}
+          </button>
+        ))}
+      </div>
+      {mode === "multi" && (
+        <p className="text-xs text-muted-foreground">{t("new.multi_hint")}</p>
       )}
       <div className="relative">
         <Search size={16} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -113,7 +174,73 @@ function Gated() {
             <Skeleton key={index} className="h-20 rounded-xl" />
           ))}
         </div>
-      ) : visible.length === 0 ? (
+      ) : (
+      <>
+      {mode === "multi" && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {visible.map((product) => {
+            const selected = selectedIds.includes(product.id);
+            const order = selected ? selectedIds.indexOf(product.id) + 1 : null;
+            return (
+              <button
+                key={product.id}
+                type="button"
+                disabled={creatingMulti}
+                onClick={() => toggleSelect(product.id)}
+                aria-pressed={selected}
+                className={`flex items-center gap-3 rounded-xl border bg-card p-3 text-start transition disabled:opacity-60 ${
+                  selected ? "border-brand ring-1 ring-brand/40" : "border-border hover:border-brand/40"
+                }`}
+              >
+                <span
+                  className={`flex size-6 shrink-0 items-center justify-center rounded-md border text-xs font-black ${
+                    selected ? "border-brand bg-brand text-white" : "border-border text-transparent"
+                  }`}
+                >
+                  {order ?? "✓"}
+                </span>
+                {product.images?.[0]?.src ? (
+                  <img
+                    src={product.images[0].src}
+                    alt={product.name}
+                    className="size-14 shrink-0 rounded-lg object-cover"
+                  />
+                ) : (
+                  <span className="flex size-14 shrink-0 items-center justify-center rounded-lg bg-muted text-xs text-muted-foreground">
+                    —
+                  </span>
+                )}
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-semibold">{product.name}</span>
+                  <span className="mt-0.5 block text-sm tabular-nums text-muted-foreground">
+                    {formatMoneyValue(product.price, locale)}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {mode === "multi" && visible.length > 0 && (
+        <div className="sticky bottom-4 flex items-center gap-3 rounded-xl border border-border bg-card p-3 shadow-lg">
+          <span className="flex-1 text-sm font-semibold">
+            {t("new.selected_count").replace("{n}", String(selectedIds.length))}
+          </span>
+          <button
+            type="button"
+            disabled={creatingMulti || selectedIds.length < 2}
+            onClick={() => void onCreateMulti()}
+            className="flex h-10 items-center gap-2 rounded-xl bg-brand px-5 text-sm font-black text-white transition disabled:opacity-50"
+          >
+            {creatingMulti && <Loader2 size={16} className="animate-spin" />}
+            {t("new.create_multi")}
+          </button>
+        </div>
+      )}
+      {mode === "multi" && visible.length === 0 && (
+        <p className="py-8 text-center text-sm text-muted-foreground">{t("new.empty")}</p>
+      )}
+      {mode === "single" && (visible.length === 0 ? (
         <p className="py-8 text-center text-sm text-muted-foreground">{t("new.empty")}</p>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
@@ -150,6 +277,8 @@ function Gated() {
             </button>
           ))}
         </div>
+      ))}
+      </>
       )}
     </div>
   );

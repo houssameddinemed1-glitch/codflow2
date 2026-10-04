@@ -51,7 +51,13 @@
     "pick": "Choisir",
     "creating": "Création…",
     "empty": "Aucun produit trouvé",
-    "error_no_product": "Choisissez un produit pour continuer"
+    "error_no_product": "Choisissez un produit pour continuer",
+    "mode_single": "Produit unique",
+    "mode_multi": "Multi-produits",
+    "multi_hint": "Choisissez 2 produits ou plus — le client en choisit un puis arrive sur son bon de commande.",
+    "selected_count": "{n} sélectionnés",
+    "create_multi": "Créer la page multi",
+    "error_min_two": "Choisissez au moins 2 produits pour une page multi"
   },
   "studio": {
     "title": "Studio de page",
@@ -78,6 +84,10 @@
     "slug_edit": "Modifier le slug",
     "slug_apply": "Appliquer",
     "slug_invalid": "3-60 caractères : minuscules, chiffres, tirets",
-    "gap_hint": "Espace entre les images empilées"
+    "gap_hint": "Espace entre les images empilées",
+    "products_title": "Produits",
+    "products_hint": "Le client choisit une carte puis arrive sur son bon de commande. Le premier produit est la couverture.",
+    "products_empty": "Aucun produit choisi",
+    "product_add": "Ajouter"
   }
 }

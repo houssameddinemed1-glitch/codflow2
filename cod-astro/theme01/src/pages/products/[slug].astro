@@ -40,6 +40,12 @@ const fieldErrors  = isInputError(result?.error) ? result.error.fields : {};
 const serverError  = result?.error && !isInputError(result.error) ? result.error.message : null;
 
 if (!product) return Astro.redirect("/");
+
+// Multi-LP attribution (?lp=<slug>): the picker grid links here with its own
+// slug so the order attributes back to the picker page. Best-effort — an
+// unknown/draft slug leaves the order unattributed, never blocked.
+const lpParam = Astro.url.searchParams.get("lp");
+const landingPageSlug = lpParam && /^[a-z0-9-]{3,60}$/.test(lpParam) ? lpParam : null;
 ---
 
 <StoreLayout
@@ -60,6 +66,7 @@ if (!product) return Astro.redirect("/");
     isRTL={isRTL}
     fieldErrors={fieldErrors}
     serverError={serverError}
+    landingPageSlug={landingPageSlug}
   />
 </StoreLayout>
 

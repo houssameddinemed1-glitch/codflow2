@@ -14,22 +14,27 @@ import {
   X,
 } from "lucide-react";
 import { canScope, RequireAuth, useIdentity } from "@/features/auth/components/RequireAuth";
-import { Alert, Badge, Button, ConfirmDialogProvider, IconButton } from "@/components/ui";
+import { Alert, Badge, Button, ConfirmDialogProvider, IconButton, Select } from "@/components/ui";
 import { useT } from "@/i18n/react";
 import { notify } from "@/lib/notify";
 import { SCOPES } from "../../../../../cod-shared/rbac/scopes";
 import {
+  addLandingPageProduct,
   deleteLandingPageImage,
   getLandingPage,
   getPresignedLandingUploadUrl,
   publishLandingPage,
+  removeLandingPageProduct,
   reorderLandingPageImages,
+  reorderLandingPageProducts,
   saveLandingPageImage,
   unpublishLandingPage,
   updateLandingPage,
 } from "@/features/landing-pages/api";
 import { landingPageErrorMessage, landingPagePublicUrl } from "@/features/landing-pages/model";
 import type { LandingPage, LandingPageImage } from "@/features/landing-pages/types";
+import { listProducts } from "@/features/products/api";
+import type { Product } from "@/features/products/types";
 
 const ACCEPTED = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"];
 const MAX_MB = 10;
@@ -154,6 +159,11 @@ function Gated({ landingPageId }: { landingPageId: string }) {
   const [slugSaving, setSlugSaving] = useState(false);
   const slugInputRef = useRef<HTMLInputElement>(null);
 
+  // Multi picks: catalog for the add-picker + in-flight pick mutations
+  const [catalog, setCatalog] = useState<Product[] | null>(null);
+  const [addId, setAddId] = useState("");
+  const [pickBusy, setPickBusy] = useState<string | null>(null);
+
   const [publishOpen, setPublishOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<number | null>(null);
@@ -178,6 +188,18 @@ function Gated({ landingPageId }: { landingPageId: string }) {
   useEffect(() => {
     if (canRead) void load();
   }, [canRead, load, identity?.role, identity?.scopes.join(",")]);
+
+  // Catalog for the multi pick-picker — loaded lazily, only multi pages need it.
+  useEffect(() => {
+    if (!canRead || lp?.kind !== "multi" || catalog !== null) return;
+    void (async () => {
+      try {
+        setCatalog((await listProducts({ limit: 100 })).data);
+      } catch {
+        setCatalog([]);
+      }
+    })();
+  }, [canRead, lp?.kind, catalog]);
 
   // Debounced autosave: name + gap persist 800ms after the last edit.
   useEffect(() => {
@@ -290,6 +312,69 @@ function Gated({ landingPageId }: { landingPageId: string }) {
     },
     [landingPageId, common, t],
   );
+
+  async function refreshPicks() {
+    const data = await getLandingPage(landingPageId);
+    setLp(data);
+    setAddId("");
+  }
+
+  async function onAddPick() {
+    if (!addId || pickBusy) return;
+    setPickBusy(addId);
+    setActionError(null);
+    try {
+      await addLandingPageProduct(landingPageId, addId);
+      await refreshPicks();
+      notify.success(common("feedback.updated"));
+    } catch (cause) {
+      const message = landingPageErrorMessage(cause, t);
+      setActionError(message);
+      notify.error(message);
+    } finally {
+      setPickBusy(null);
+    }
+  }
+
+  async function onRemovePick(productId: string) {
+    if (pickBusy) return;
+    setPickBusy(productId);
+    setActionError(null);
+    try {
+      await removeLandingPageProduct(landingPageId, productId);
+      await refreshPicks();
+      notify.success(common("feedback.deleted"));
+    } catch (cause) {
+      const message = landingPageErrorMessage(cause, t);
+      setActionError(message);
+      notify.error(message);
+    } finally {
+      setPickBusy(null);
+    }
+  }
+
+  async function onMovePick(productId: string, direction: -1 | 1) {
+    const ids = lp?.productIds ?? [];
+    const index = ids.indexOf(productId);
+    const target = index + direction;
+    if (index === -1 || target < 0 || target >= ids.length || pickBusy) return;
+    setPickBusy(productId);
+    setActionError(null);
+    try {
+      await reorderLandingPageProducts(landingPageId, swapAt(ids, index, target));
+      await refreshPicks();
+    } catch (cause) {
+      const message = landingPageErrorMessage(cause, t);
+      setActionError(message);
+      notify.error(message);
+    } finally {
+      setPickBusy(null);
+    }
+  }
+
+  function pickName(productId: string): string {
+    return catalog?.find((p) => p.id === productId)?.name ?? productId;
+  }
 
   const onTogglePublish = useCallback(async () => {
     if (!lp) return;
@@ -558,6 +643,97 @@ function Gated({ landingPageId }: { landingPageId: string }) {
           </div>
         </div>
 
+        {lp.kind === "multi" && (
+          <div className="border-t border-border pt-4">
+            <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              {t("studio.products_title")}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">{t("studio.products_hint")}</p>
+            <div className="mt-3 space-y-2">
+              {(lp.productIds ?? []).length === 0 && (
+                <p className="py-4 text-center text-xs text-muted-foreground">
+                  {t("studio.products_empty")}
+                </p>
+              )}
+              {(lp.productIds ?? []).map((productId, index, ids) => (
+                <div
+                  key={productId}
+                  className="flex items-center gap-2 rounded-lg border border-border bg-background p-2"
+                >
+                  <span className="w-5 shrink-0 text-center text-[0.7rem] font-bold text-muted-foreground">
+                    {index + 1}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-xs font-semibold">
+                    {pickName(productId)}
+                  </span>
+                  {canManage && (
+                    <div className="flex shrink-0 items-center gap-0.5">
+                      <IconButton
+                        type="button"
+                        aria-label={common("move_up")}
+                        title={common("move_up")}
+                        onClick={() => void onMovePick(productId, -1)}
+                        disabled={index === 0 || pickBusy !== null}
+                        className="size-6"
+                      >
+                        <ChevronUp size={13} />
+                      </IconButton>
+                      <IconButton
+                        type="button"
+                        aria-label={common("move_down")}
+                        title={common("move_down")}
+                        onClick={() => void onMovePick(productId, 1)}
+                        disabled={index === ids.length - 1 || pickBusy !== null}
+                        className="size-6"
+                      >
+                        <ChevronDown size={13} />
+                      </IconButton>
+                      <IconButton
+                        type="button"
+                        aria-label={t("studio.remove")}
+                        title={t("studio.remove")}
+                        onClick={() => void onRemovePick(productId)}
+                        disabled={pickBusy !== null}
+                        className="size-7 text-destructive"
+                      >
+                        <X size={14} />
+                      </IconButton>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+            {canManage && (
+              <div className="mt-3 flex gap-2">
+                <Select
+                  value={addId}
+                  onChange={(event) => setAddId(event.currentTarget.value)}
+                  size="sm"
+                  wrapperClassName="min-w-0 flex-1"
+                  aria-label={t("studio.products_title")}
+                >
+                  <option value="">{t("studio.products_empty")}</option>
+                  {(catalog ?? [])
+                    .filter((p) => !(lp.productIds ?? []).includes(p.id))
+                    .map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                </Select>
+                <Button
+                  type="button"
+                  disabled={!addId || pickBusy !== null}
+                  onClick={() => void onAddPick()}
+                  className="h-9 shrink-0"
+                >
+                  {t("studio.product_add")}
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="border-t border-border pt-4">
           <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
             {t("studio.left_title")}
@@ -664,7 +840,41 @@ function Gated({ landingPageId }: { landingPageId: string }) {
           <div className="flex h-6 items-center justify-center border-b border-border/40">
             <span className="h-1.5 w-16 rounded-full bg-foreground/15" />
           </div>
-          {lp.images.length === 0 ? (
+          {lp.kind === "multi" ? (
+            (lp.productIds ?? []).length === 0 ? (
+              <div className="flex h-64 items-center justify-center text-xs text-muted-foreground">
+                {t("studio.products_empty")}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2 p-3">
+                {(lp.productIds ?? []).map((productId) => {
+                  const item = catalog?.find((p) => p.id === productId);
+                  return (
+                    <div
+                      key={productId}
+                      className="overflow-hidden rounded-xl border border-border bg-background"
+                    >
+                      {item?.images?.[0]?.src ? (
+                        <img
+                          src={item.images[0].src}
+                          alt={item.name}
+                          loading="lazy"
+                          className="block aspect-square w-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex aspect-square w-full items-center justify-center bg-muted text-xs text-muted-foreground">
+                          —
+                        </div>
+                      )}
+                      <p className="truncate px-2 py-2 text-[0.7rem] font-bold">
+                        {item?.name ?? productId}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            )
+          ) : lp.images.length === 0 ? (
             <div className="flex h-64 items-center justify-center text-xs text-muted-foreground">
               {t("studio.no_images")}
             </div>

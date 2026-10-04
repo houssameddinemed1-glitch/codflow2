@@ -896,16 +896,24 @@ export const offers = pgTable("offers", {
 
 export const landingPageStatusEnum = pgEnum("landing_pages_status", ["draft", "published", "archived"]);
 
+export const landingPageKindEnum = pgEnum("landing_pages_kind", ["single", "multi"]);
+
 export const landingPages = pgTable("landing_pages", {
   id: text("id").primaryKey(),
   /** Public URL identifier: [a-z0-9-]{3,60}. Auto-generated `lp-<8char>` default. */
   slug: text("slug").notNull().unique(),
   /** Internal label, e.g. "Zinc v3 — carousel ad". Never rendered publicly. */
   name: text("name").notNull(),
-  /** The single product this page sells. */
+  /** The single product this page sells. For multi pages: the cover product (first pick). */
   productId: text("product_id")
     .notNull()
     .references(() => products.id),
+  /**
+   * Page shape: `single` = one-product image stack + COD form (v1 behavior);
+   * `multi` = picker grid of landing_page_products cards linking out to each
+   * product's order form. Defaults single so every existing row keeps rendering.
+   */
+  kind: landingPageKindEnum("kind").notNull().default("single"),
   status: landingPageStatusEnum("status").notNull().default("draft"),
   /** Pixels between stacked images. 0 = flush stack. */
   imageGap: integer("image_gap").notNull().default(0),
@@ -936,6 +944,24 @@ export const landingPageImages = pgTable("landing_page_images", {
   position: integer("position").notNull().default(1),
   width: integer("width"),
   height: integer("height"),
+  createdAt: text("created_at").notNull(),
+});
+
+/**
+ * One picked product on a multi landing page. Ordered by position (1 = top
+ * of the grid). Rows are merchant-curated — no auto rules in v1. Cascade:
+ * deleting the page removes its picks; deleting a product is blocked by the
+ * FK while any page picks it.
+ */
+export const landingPageProducts = pgTable("landing_page_products", {
+  id: text("id").primaryKey(),
+  landingPageId: text("landing_page_id")
+    .notNull()
+    .references(() => landingPages.id, { onDelete: "cascade" }),
+  productId: text("product_id")
+    .notNull()
+    .references(() => products.id),
+  position: integer("position").notNull().default(1),
   createdAt: text("created_at").notNull(),
 });
 

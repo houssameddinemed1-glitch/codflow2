@@ -80,6 +80,21 @@ export async function getStoreLandingPage(c: Context<AppContext>) {
       })
     : null;
 
+  // Multi pages resolve every pick to its full store-product shape so the
+  // grid cards (photo, name, price) render without a second round trip.
+  // Unresolvable picks (inactive, deleted) drop out silently — the grid
+  // shows what can be ordered, never a dead card.
+  const products =
+    lp.kind === "multi"
+      ? (
+          await Promise.all(
+            (await queries.getLandingPagePickHandles(db, lp.id)).map((handle) =>
+              queries.getStoreProductByHandle(db, handle, { allowUnlisted: true }),
+            ),
+          )
+        ).filter((p) => p !== null)
+      : [];
+
   // One render = one view. Atomic single-row UPDATE, deferred via waitUntil
   // so the write never blocks the render response (Cloudflare's documented
   // pattern for analytics-after-response; same seam the CAPI trigger uses).
@@ -98,12 +113,14 @@ export async function getStoreLandingPage(c: Context<AppContext>) {
         slug: lp.slug,
         name: lp.name,
         status: lp.status,
+        kind: lp.kind ?? "single",
         imageGap: lp.imageGap,
         metaTitle: lp.metaTitle,
         metaDescription: lp.metaDescription,
         publishedAt: lp.publishedAt,
         images: lp.images,
         product,
+        products,
       },
     },
     200,

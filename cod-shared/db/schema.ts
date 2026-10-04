@@ -1211,10 +1211,12 @@ export const offers = sqliteTable("offers", {
 // ─── Landing Pages ────────────────────────────────────────────────────────────
 
 /**
- * A one-product marketing page: an ordered image stack with the COD order
- * form at the bottom. Merchants create several per product, run ads to each,
- * and compare which one converts. All marketing copy lives inside the images;
- * the engine charges the catalog price (no price override — see PR #90).
+ * A marketing page in two shapes (`kind`): `single` is the one-product page —
+ * an ordered image stack with the COD order form at the bottom. Merchants
+ * create several per product, run ads to each, and compare which one converts.
+ * All marketing copy lives inside the images; the engine charges the catalog
+ * price (no price override — see PR #90). `multi` is the picker grid: photo +
+ * name + price + CTA cards linking out to each product's order form.
  */
 export const landingPages = sqliteTable("landing_pages", {
   id: text("id").primaryKey(),
@@ -1222,10 +1224,14 @@ export const landingPages = sqliteTable("landing_pages", {
   slug: text("slug").notNull().unique(),
   /** Internal label, e.g. "Zinc v3 — carousel ad". Never rendered publicly. */
   name: text("name").notNull(),
-  /** The single product this page sells. */
+  /** The single product this page sells. For multi pages: the cover product (first pick). */
   productId: text("product_id")
     .notNull()
     .references(() => products.id),
+  /** Page shape: `single` = image stack + COD form; `multi` = picker grid. */
+  kind: text("kind", { enum: ["single", "multi"] })
+    .notNull()
+    .default("single"),
   status: text("status", { enum: ["draft", "published", "archived"] })
     .notNull()
     .default("draft"),
@@ -1269,6 +1275,23 @@ export const landingPageImages = sqliteTable("landing_page_images", {
   position: integer("position").notNull().default(1),
   width: integer("width"),
   height: integer("height"),
+  createdAt: text("created_at").notNull(),
+});
+
+/**
+ * One picked product on a multi landing page, ordered by position.
+ * Merchant-curated; deleting the page cascades, deleting a picked product
+ * is blocked by the FK.
+ */
+export const landingPageProducts = sqliteTable("landing_page_products", {
+  id: text("id").primaryKey(),
+  landingPageId: text("landing_page_id")
+    .notNull()
+    .references(() => landingPages.id, { onDelete: "cascade" }),
+  productId: text("product_id")
+    .notNull()
+    .references(() => products.id),
+  position: integer("position").notNull().default(1),
   createdAt: text("created_at").notNull(),
 });
 

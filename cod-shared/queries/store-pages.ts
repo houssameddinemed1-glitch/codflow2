@@ -23,6 +23,8 @@ import {
   DEFAULT_PAGE_LOCALE,
   PAGE_LOCALES,
   TEMPLATE_VERSION,
+  isLegalPageKind,
+  isPageLocale,
 } from "../legal/kinds";
 import type { LegalPageKind, PageLocale, StorePageKind } from "../legal/kinds";
 import { legalFactsFrom, renderLegalTemplate } from "../legal/render";
@@ -205,7 +207,7 @@ export async function resetTranslationToTemplate(
     .from(storePages)
     .where(and(eq(storePages.id, pageId), eq(storePages.storeId, storeId)))
     .then((rows) => rows[0] ?? null);
-  if (!page || !isLegalKind(page.kind)) return null;
+  if (!page || !isLegalPageKind(page.kind)) return null;
 
   const store = await db.select({ name: stores.name }).from(stores).where(eq(stores.id, storeId)).then((rows) => rows[0] ?? null);
   if (!store) return null;
@@ -230,10 +232,6 @@ export async function resetTranslationToTemplate(
     .where(eq(storePages.id, pageId));
 
   return translation;
-}
-
-function isLegalKind(kind: StorePageKind): kind is LegalPageKind {
-  return (LEGAL_PAGE_KINDS as readonly string[]).includes(kind);
 }
 
 // â”€â”€â”€ Seeding â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -375,7 +373,9 @@ export async function getStorePageById(
     .where(eq(storePageTranslations.pageId, id));
 
   const bodies = Object.fromEntries(PAGE_LOCALES.map((l) => [l, undefined])) as StorePageDetail["bodies"];
-  for (const t of translations) bodies[t.locale] = t;
+  for (const t of translations) {
+    if (isPageLocale(t.locale)) bodies[t.locale] = t;
+  }
 
   return { ...summarise(page, translations), bodies };
 }

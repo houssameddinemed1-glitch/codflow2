@@ -194,6 +194,7 @@ export function LandingPagesList() {
         id: dup.data.id,
         slug: dup.data.slug,
         name: dup.data.name,
+        kind: dup.data.kind,
         status: dup.data.status,
         productId: dup.data.productId,
         productName: dup.data.product?.name ?? null,
