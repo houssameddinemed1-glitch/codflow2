@@ -36,6 +36,9 @@ export function errorHandler(err: Error, c: Context): Response {
     path: c.req.path,
     method: c.req.method,
     timestamp: new Date().toISOString(),
+    // AppError context carries the wrapped cause (e.g. storage SDK text) —
+    // server log only, never echoed beyond what the response already holds.
+    context: err instanceof AppError ? err.context : undefined,
     // Include user info if available
     user: c.get("user")?.id || "anonymous",
   });
