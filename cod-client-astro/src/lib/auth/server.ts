@@ -118,7 +118,10 @@ export function createAuth(env: AuthEnv) {
     },
     advanced: {
       ipAddress: {
-        ipAddressHeaders: ["x-forwarded-for"],
+        // Cloudflare Workers: the visitor IP arrives as CF-Connecting-IP;
+        // x-forwarded-for is the Vercel/local shape. Without a resolvable IP
+        // every visitor shares one rate-limit bucket (mutual lockouts).
+        ipAddressHeaders: ["CF-Connecting-IP", "x-forwarded-for"],
       },
     },
     rateLimit: {
