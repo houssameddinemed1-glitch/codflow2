@@ -12,6 +12,8 @@ import { assertTurnstile } from "./turnstile-gate";
 import { applyCheckoutPolicy } from "../../../../cod-shared/checkout-form/apply";
 import { checkoutPolicyMessage } from "../../../../cod-shared/checkout-form/messages";
 import { resolveTrackingConfig } from "../../../../cod-shared/queries/tracking-config";
+import { getTiktokConfig } from "../../../../cod-shared/queries/tiktok-config";
+import { resolveTiktokForStage, getTiktokWorkflowId } from "@/workflows/tiktok-conversion-model";
 import {
   normalizeOrderLines,
   CartValidationError,
@@ -444,6 +446,67 @@ export async function createStoreOrder(c: Context<AppContext>) {
     }
   } else {
     console.error("[capi-workflow] CAPI_WORKFLOW binding is undefined — worker needs re-provision");
+  }
+
+  // TikTok Events API conversion event at checkout — evaluated against the
+  // merchant's TikTok tracking mode ONLY (Meta's mode never influences this).
+  // Instant "Purchase" → CompletePayment; "Lead" → SubmitForm (both matching
+  // the thank-you ttq pixel). "Purchase_Confirmed"/"Purchase_Delivered" skip
+  // at checkout and fire down-funnel via the TikTok workflow.
+  if (c.env.TIKTOK_WORKFLOW) {
+    try {
+      const storeId = c.get("storeId");
+      const tiktokConfig =
+        storeId && typeof db.select === "function"
+          ? await getTiktokConfig(db, storeId)
+          : undefined;
+      const tiktokDecision = resolveTiktokForStage(tiktokConfig?.conversionEvent, "checkout");
+
+      if (tiktokDecision.shouldFire && tiktokDecision.eventName) {
+        let tiktokStoreRow: { domain: string | null } | undefined = undefined;
+        if (storeId && typeof db.select === "function") {
+          tiktokStoreRow = await db
+            .select({ domain: stores.domain })
+            .from(stores)
+            .where(eq(stores.id, storeId))
+            .get();
+        }
+
+        let tiktokSourceUrl = conversionSourceUrl(
+          tiktokStoreRow?.domain,
+          landingPageId ? data.landingPageSlug : null,
+        );
+
+        if (!tiktokSourceUrl) {
+          const referer = c.req.header("Referer");
+          if (referer && (referer.startsWith("http://") || referer.startsWith("https://"))) {
+            tiktokSourceUrl = referer;
+          }
+        }
+
+        const tiktokWorkflowId = getTiktokWorkflowId(order.id, "checkout", tiktokDecision.eventName);
+
+        c.executionCtx.waitUntil(
+          c.env.TIKTOK_WORKFLOW.create({
+            id: tiktokWorkflowId,
+            params: {
+              orderId: order.id,
+              eventName: tiktokDecision.eventName,
+              stage: "checkout",
+              triggeredAt: Math.floor(Date.now() / 1000),
+              triggerStatus: "order_created",
+              eventSourceUrl: tiktokSourceUrl,
+            },
+          }).catch((err: unknown) =>
+            console.error(`[tiktok-workflow] checkout ${tiktokDecision.eventName} trigger failed:`, (err as Error)?.message)
+          )
+        );
+      }
+    } catch (err) {
+      console.error("[tiktok-workflow] checkout evaluation failed:", (err as Error)?.message);
+    }
+  } else {
+    console.error("[tiktok-workflow] TIKTOK_WORKFLOW binding is undefined — worker needs re-provision");
   }
 
   return c.json(

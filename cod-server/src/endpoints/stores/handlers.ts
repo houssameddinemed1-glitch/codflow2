@@ -6,6 +6,7 @@ import { updateStoreSchema } from "./validation";
 import { NotFoundError, SystemError, ValidationError, ExternalApiError } from "@/lib/errors/classes";
 import { ERROR_CODES } from "../../../../cod-shared/errors/codes";
 import { getPixelConfig as queryPixelConfig, upsertPixelConfig } from "../../../../cod-shared/queries/pixel-config";
+import { getTiktokConfig as queryTiktokConfig, upsertTiktokConfig } from "../../../../cod-shared/queries/tiktok-config";
 import { maskApiKey } from "@/lib/mask";
 import { getOtpConfigRaw, upsertOtpConfig } from "../../../../cod-shared/queries/otp-config";
 import { getTurnstileConfigRaw, upsertTurnstileConfig } from "../../../../cod-shared/queries/turnstile-config";
@@ -107,6 +108,60 @@ export async function savePixelConfig(c: Context<AppContext>) {
     throw new SystemError("Failed to save pixel config");
   }
   return c.json({ success: true, data: pixelConfigResponse(result) }, 200);
+}
+
+// ─── TikTok Pixel / Events API config ──────────────────────────────────────
+// Fully separate from Meta: own schema, own table, own audit log.
+
+export const tiktokConfigSchema = z.object({
+  pixelId: z.string().min(1),
+  adAccountName: z.string().max(200).nullable().optional(),
+  accessToken: z.string().default("").openapi({
+    description:
+      "TikTok access token. Empty string keeps the previously stored token (the token is never sent back to the client).",
+  }),
+  testEventCode: z.string().nullable().optional(),
+  conversionEvent: z.enum(["Purchase", "Purchase_Confirmed", "Purchase_Delivered", "Lead"]),
+  testMode: z.boolean().optional(),
+  enabled: z.boolean().optional(),
+});
+
+/** Safe projection — the access token never leaves the API, only a masked hint. */
+function tiktokConfigResponse(row: NonNullable<Awaited<ReturnType<typeof queryTiktokConfig>>>) {
+  return {
+    id: row.id,
+    storeId: row.storeId,
+    pixelId: row.pixelId,
+    adAccountName: row.adAccountName,
+    accessTokenMasked: maskApiKey(row.accessToken),
+    testEventCode: row.testEventCode,
+    conversionEvent: row.conversionEvent,
+    testMode: row.testMode,
+    enabled: row.enabled,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+export async function getTiktokConfig(c: Context<AppContext>) {
+  const db = getDb(c.env.DB);
+  const store = await queries.getStore(db);
+  if (!store) throw new NotFoundError("Store");
+  const config = await queryTiktokConfig(db, store.id);
+  return c.json({ success: true, data: config ? tiktokConfigResponse(config) : null }, 200);
+}
+
+export async function saveTiktokConfig(c: Context<AppContext>) {
+  const db = getDb(c.env.DB);
+  const store = await queries.getStore(db);
+  if (!store) throw new NotFoundError("Store");
+  const jsonBody: any = (c.req as any).valid?.("json");
+  const validated = jsonBody ?? tiktokConfigSchema.parse(await c.req.json());
+  const result = await upsertTiktokConfig(db, store.id, validated);
+  if (!result) {
+    throw new SystemError("Failed to save TikTok config");
+  }
+  return c.json({ success: true, data: tiktokConfigResponse(result) }, 200);
 }
 
 // ─── WhatsApp OTP verification config (dzverify) ──────────────────────────────

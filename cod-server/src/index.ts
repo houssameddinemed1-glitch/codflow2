@@ -59,6 +59,7 @@ import { ALL_SCOPES } from "../../cod-shared/rbac/scopes";
 // Cloudflare Workflow classes — MUST be re-exported so Cloudflare can bind
 // them via wrangler.toml [[workflows]].
 export { CodCapiWorkflow } from "@/workflows/capi";
+export { CodTiktokWorkflow } from "@/workflows/tiktok";
 export { CodLandingPageImageUploadWorkflow } from "@/workflows/landing-page-image-upload";
 
 // OpenAPIHono extends Hono: existing routes/middleware keep working, and

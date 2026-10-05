@@ -141,6 +141,7 @@ export {
 export {
   StoreSchema,
   StorePixelConfigSchema,
+  StoreTiktokConfigSchema,
   StoreProductImageSchema,
   StoreReviewStatsSchema,
   StoreProductListSchema,

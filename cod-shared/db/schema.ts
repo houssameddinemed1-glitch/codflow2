@@ -1320,6 +1320,49 @@ export const storePixelConfig = sqliteTable("store_pixel_config", {
   updatedAt: text("updated_at").notNull(),
 });
 
+// ─── TikTok Pixel / Events API ─────────────────────────────────────────────
+
+/**
+ * Per-store TikTok Pixel + Events API configuration.
+ * One row per store. No row = TikTok tracking disabled (safe default).
+ * Fully separate from `storePixelConfig` — TikTok data never mixes with Meta.
+ */
+export const storeTiktokConfig = sqliteTable("store_tiktok_config", {
+  id: text("id").primaryKey(),
+  storeId: text("store_id")
+    .notNull()
+    .unique()
+    .references(() => stores.id, { onDelete: "cascade" }),
+  pixelId: text("pixel_id").notNull(),
+  /** Merchant's label for the TikTok ad account — reference only, never sent to TikTok. */
+  adAccountName: text("ad_account_name"),
+  accessToken: text("access_token").notNull(),
+  /** TikTok test event code — used during integration testing only. */
+  testEventCode: text("test_event_code"),
+  conversionEvent: text("conversion_event", { enum: ["Lead", "Purchase", "Purchase_Confirmed", "Purchase_Delivered"] }).notNull().default("Purchase"),
+  testMode: integer("test_mode", { mode: "boolean" }).notNull().default(false),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+/**
+ * Audit log for every TikTok Events API attempt (sent, failed, or skipped).
+ * Separate from `capi_event_log` — TikTok outcomes never mix with Meta's.
+ */
+export const tiktokEventLog = sqliteTable("tiktok_event_log", {
+  id: text("id").primaryKey(),
+  orderId: text("order_id")
+    .notNull()
+    .references(() => orders.id),
+  eventName: text("event_name").notNull(),
+  stage: text("stage").notNull().default("delivered"),
+  status: text("status").notNull(),
+  tiktokEventId: text("tiktok_event_id"),
+  error: text("error"),
+  sentAt: text("sent_at").notNull(),
+});
+
 /**
  * A landing page's own Meta Pixel + Conversions API configuration, which
  * REPLACES the store's for that page's visitors and for the orders attributed

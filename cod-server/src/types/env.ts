@@ -75,6 +75,12 @@ export interface Env {
    */
   CAPI_WORKFLOW: Workflow;
   /**
+   * Cloudflare Workflow binding for CodTiktokWorkflow.
+   * Fires TikTok Events API events across the COD lifecycle — decoupled from
+   * status handler. Fully separate from CAPI (own config, own audit log).
+   */
+  TIKTOK_WORKFLOW: Workflow;
+  /**
    * Cloudflare Workflow binding for CodLandingPageImageUploadWorkflow.
    * Durable background upload of MCP-agent images into the landing page stack.
    */

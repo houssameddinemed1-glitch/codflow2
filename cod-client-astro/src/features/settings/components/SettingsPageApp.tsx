@@ -16,6 +16,7 @@ import { ReviewsSettings } from "@/features/settings/components/ReviewsSettings"
 import { DeliveryPricingSettings } from "@/features/settings/components/DeliveryPricingSettings";
 import { CartSettings } from "@/features/settings/components/CartSettings";
 import { TrackingSettings } from "@/features/settings/components/TrackingSettings";
+import { TiktokSettings } from "@/features/settings/components/TiktokSettings";
 import { VerificationSettings } from "@/features/settings/components/VerificationSettings";
 import { BotProtectionSettings } from "@/features/settings/components/BotProtectionSettings";
 import { EmailSettings } from "@/features/settings/components/EmailSettings";
@@ -104,7 +105,12 @@ function SettingsContent() {
       case "reviews":
         return <ReviewsSettings storeConfig={storeConfig} onSave={handleSave} />;
       case "analytics":
-        return <TrackingSettings />;
+        return (
+          <div className="space-y-6">
+            <TrackingSettings />
+            <TiktokSettings />
+          </div>
+        );
       case "verification":
         return <VerificationSettings />;
       case "bot_protection":

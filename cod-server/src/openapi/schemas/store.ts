@@ -103,6 +103,36 @@ export const StorePixelConfigSchema = z
     description: "Meta pixel tracking configuration for server-side conversion events",
   });
 
+export const StoreTiktokConfigSchema = z
+  .object({
+    id: z.string(),
+    storeId: z.string(),
+    pixelId: z.string().openapi({ example: "DAT4K73C77UB6V73NAVG" }),
+    adAccountName: z.string().nullable().openapi({
+      description: "Merchant's own label for the TikTok ad account — reference only, never sent to TikTok.",
+    }),
+    accessTokenMasked: z.string().openapi({
+      description: "Masked hint of the stored TikTok Events API token — the token itself is write-only.",
+      example: "••••a9f2",
+    }),
+    testEventCode: z.string().nullable().openapi({
+      description: "TikTok test event code — used only while Test Mode is on. Set to null in production.",
+    }),
+    conversionEvent: z.enum(["Purchase", "Purchase_Confirmed", "Purchase_Delivered", "Lead"]).openapi({
+      description:
+        "Merchant-chosen conversion event: 'Purchase' fires immediately at checkout, 'Purchase_Confirmed' fires on order confirmation, 'Purchase_Delivered' fires on confirmed delivery, and 'Lead' fires at checkout.",
+    }),
+    testMode: z.boolean().openapi({
+      description: "When true, Events API calls carry test_event_code to TikTok's test stream.",
+    }),
+    enabled: z.boolean().openapi({ example: true }),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+  })
+  .openapi("StoreTiktokConfig", {
+    description: "TikTok pixel tracking configuration for server-side conversion events — fully separate from Meta",
+  });
+
 // ─── Storefront API (public, X-Store-API-Key) ─────────────────────────────────
 
 export const StoreProductImageSchema = z.object({

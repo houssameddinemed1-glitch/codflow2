@@ -15,6 +15,7 @@ import { logActivity, ACTIONS } from "@/lib/activity";
 import { NotFoundError, BusinessLogicError, ValidationError } from "@/lib/errors/classes";
 import { ERROR_CODES, ERROR_CATEGORIES } from "../../../../cod-shared/errors/codes";
 import { shouldTriggerCapiPurchase, shouldTriggerCapiConfirmed, getCapiWorkflowId } from "@/workflows/capi-helpers";
+import { getTiktokWorkflowId } from "@/workflows/tiktok-conversion-model";
 
 /**
  * PATCH /orders/:id/status
@@ -101,6 +102,33 @@ export async function updateStatus(c: Context<AppContext>) {
           },
         }).catch((err: Error) =>
           console.error("[capi-workflow] trigger failed:", err?.message)
+        )
+      );
+    }
+  }
+
+  // Fire TikTok Events API Workflow — evaluated independently from Meta.
+  // Same lifecycle moments, but the TikTok event reads ONLY the TikTok
+  // config: Meta's mode never influences TikTok sends and vice versa.
+  // The workflow itself gates on the merchant's TikTok conversionEvent.
+  if (isDeliveredTrigger || isConfirmedTrigger) {
+    if (!c.env.TIKTOK_WORKFLOW) {
+      console.error("[tiktok-workflow] TIKTOK_WORKFLOW binding is undefined — worker needs re-provision");
+    } else {
+      const stage = isConfirmedTrigger ? "confirmed" : "delivered";
+      const tiktokWorkflowId = getTiktokWorkflowId(orderId, stage, "CompletePayment");
+      c.executionCtx.waitUntil(
+        c.env.TIKTOK_WORKFLOW.create({
+          id: tiktokWorkflowId,
+          params: {
+            orderId,
+            eventName: "CompletePayment",
+            stage,
+            triggeredAt: Math.floor(Date.now() / 1000),
+            triggerStatus: validated.status,
+          },
+        }).catch((err: Error) =>
+          console.error("[tiktok-workflow] trigger failed:", err?.message)
         )
       );
     }

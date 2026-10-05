@@ -87,6 +87,31 @@ export interface SavePixelConfigData {
   perPageTrackingEnabled?: boolean;
 }
 
+/** TikTok pixel tracking configuration. Absent until first saved. Fully separate from Meta. */
+export interface TiktokConfig {
+  id: string;
+  storeId: string;
+  pixelId: string;
+  adAccountName: string | null;
+  accessTokenMasked: string;
+  testEventCode: string | null;
+  conversionEvent: "Purchase" | "Purchase_Confirmed" | "Purchase_Delivered" | "Lead";
+  testMode: boolean;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SaveTiktokConfigData {
+  pixelId: string;
+  adAccountName?: string | null;
+  accessToken?: string;
+  testEventCode?: string | null;
+  conversionEvent: "Purchase" | "Purchase_Confirmed" | "Purchase_Delivered" | "Lead";
+  testMode?: boolean;
+  enabled?: boolean;
+}
+
 /** WhatsApp OTP verification configuration (dzverify). Absent until first saved — null = disabled. */
 export interface OtpConfig {
   language: "en" | "fr" | "ar";

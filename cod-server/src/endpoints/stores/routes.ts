@@ -18,6 +18,7 @@ import { updateStoreSchema } from "./validation";
 import {
   StoreSchema,
   StorePixelConfigSchema,
+  StoreTiktokConfigSchema,
   SuccessResponseSchema,
 } from "@/openapi/schemas";
 
@@ -116,6 +117,51 @@ const savePixelConfigRoute = defineRoute({
     },
   },
   handler: handlers.savePixelConfig,
+});
+
+// ─── TikTok Pixel / Events API config ─────────────────────────────────────
+// Fully separate from Meta: own schema, own table, own audit log.
+
+const getTiktokConfigRoute = defineRoute({
+  method: "get",
+  path: "/tiktok-config",
+  auth: "admin",
+  tags: ["Store Settings"],
+  summary: "Get TikTok configuration",
+  description:
+    "Returns the store's TikTok pixel tracking configuration, or `null` when none has been configured yet.",
+  operationId: "getTiktokConfig",
+  responses: {
+    200: {
+      description: "TikTok configuration (null when not configured)",
+      content: jsonContent(
+        z.object({
+          success: z.boolean().openapi({ example: true }),
+          data: StoreTiktokConfigSchema.nullable(),
+        })
+      ),
+    },
+  },
+  handler: handlers.getTiktokConfig,
+});
+
+const saveTiktokConfigRoute = defineRoute({
+  method: "post",
+  path: "/tiktok-config",
+  auth: "admin",
+  tags: ["Store Settings"],
+  summary: "Save TikTok configuration",
+  description:
+    "Upserts the store's TikTok pixel tracking configuration. `conversionEvent` is required. An empty `accessToken` keeps the previously stored token.",
+  operationId: "saveTiktokConfig",
+  body: handlers.tiktokConfigSchema,
+  responses: {
+    200: {
+      description: "Saved TikTok configuration",
+      content: jsonContent(SuccessResponseSchema(StoreTiktokConfigSchema)),
+    },
+  },
+  handler: handlers.saveTiktokConfig,
 });
 
 // ─── WhatsApp OTP verification config (dzverify) ──────────────────────────────
@@ -343,6 +389,8 @@ router.openapi(getMyStoreRoute.route, getMyStoreRoute.handler);
 router.openapi(updateMyStoreRoute.route, updateMyStoreRoute.handler);
 router.openapi(getPixelConfigRoute.route, getPixelConfigRoute.handler);
 router.openapi(savePixelConfigRoute.route, savePixelConfigRoute.handler);
+router.openapi(getTiktokConfigRoute.route, getTiktokConfigRoute.handler);
+router.openapi(saveTiktokConfigRoute.route, saveTiktokConfigRoute.handler);
 router.openapi(getOtpConfigRoute.route, getOtpConfigRoute.handler);
 router.openapi(saveOtpConfigRoute.route, saveOtpConfigRoute.handler);
 router.openapi(testOtpConfigRoute.route, testOtpConfigRoute.handler);

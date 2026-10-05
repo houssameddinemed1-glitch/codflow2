@@ -43,6 +43,7 @@ import { deriveDescriptionPlain } from "./products";
 import { resolveDeliveryFee } from "./shipping-resolution";
 import { normalizeOrderLines } from "./cart";
 import { resolvePublicTracking } from "./tracking-config";
+import { getTiktokConfig } from "./tiktok-config";
 import { chunkIds } from "./d1-limits";
 import { getFooterPages, getPublicLegalContact } from "./store-pages";
 import type { PageLocale } from "../legal/kinds";
@@ -112,12 +113,16 @@ export interface StoreOrderData {
 export async function getStoreConfig(db: AppDb, storeId: string) {
   const store = await db.select().from(stores).where(eq(stores.id, storeId)).get();
   if (!store) return null;
-  const [tracking, otpRow, turnstileRow, pages, legalContact] = await Promise.all([
+  const [tracking, tiktok, otpRow, turnstileRow, pages, legalContact] = await Promise.all([
     // Which pixel this storefront loads is resolved in one place for every
     // sender — see queries/tracking-config.ts. The public accessor cannot
     // return the Conversions API token, which is what keeps it out of the
     // storefront payload structurally rather than by care.
     resolvePublicTracking(db, { storeId }),
+    // TikTok pixel id for the browser loader — store-level only (no per-page
+    // overrides). Null unless a row exists AND is enabled, so the storefront
+    // never initialises ttq against a dead pixel. Token never leaves server.
+    getTiktokConfig(db, storeId),
     db
       .select({ enabled: storeOtpConfig.enabled })
       .from(storeOtpConfig)
@@ -151,6 +156,8 @@ export async function getStoreConfig(db: AppDb, storeId: string) {
     whatsapp: resolveStorefrontWidget(whatsappWidgetJson),
     pixelId: tracking.pixelId,
     conversionEvent: tracking.conversionEvent,
+    tiktokPixelId: tiktok?.enabled && tiktok.pixelId ? tiktok.pixelId : null,
+    tiktokConversionEvent: tiktok?.enabled && tiktok.pixelId ? tiktok.conversionEvent : null,
     pages,
     legalContact,
     otpEnabled: otpRow?.enabled === true,
