@@ -1,7 +1,7 @@
 {
   "name": "codflow",
   "private": true,
-  "description": "CodFlow — COD e-commerce platform monorepo (Vercel + Postgres + Astro).",
+  "description": "CodFlow — COD e-commerce platform monorepo (Cloudflare + D1 + Astro; theme01 deploys to Vercel).",
   "workspaces": [
     "cod-shared",
     "cod-server",

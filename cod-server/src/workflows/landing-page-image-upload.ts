@@ -163,7 +163,7 @@ async function transcodeToWebp(
     return null;
   }
   try {
-    const transformed = await env.IMAGE_TRANSFORM.input(new Blob([bytes]).stream()).output({
+    const transformed = await (env.IMAGE_TRANSFORM as any).input(new Blob([bytes as unknown as BlobPart]).stream()).output({
       format: "image/webp",
       quality: WEBP_QUALITY,
     });

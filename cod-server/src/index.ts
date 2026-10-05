@@ -119,42 +119,13 @@ app.get("/health", (c) => {
   return c.json({ status: "ok" });
 });
 
-// ─── Internal workflows (QStash-verified) ────────────────────────────────────
-// POST /api/internal/workflows/capi — receives QStash callbacks
-// POST /api/internal/workflows/tiktok — receives QStash callbacks
-// POST /api/internal/workflows/lp-image-upload — receives QStash callbacks
-// NOTE: the /api prefix must match lib/queue.ts publishWorkflow, and this
-// mount must stay BEFORE app.use("/api/*", authMiddleware) — QStash carries
+// ─── Internal workflows (QStash fallback) ────────────────────────────────────
+// POST /api/internal/workflows/capi|tiktok|lp-image-upload — QStash callbacks
+// for local dev / tests without workflow bindings. Production Cloudflare uses
+// durable Workflows via lib/queue.ts (env.CAPI_WORKFLOW.create, ...).
+// This mount stays BEFORE app.use("/api/*", authMiddleware) — QStash carries
 // no merchant JWT (signature verified per request inside the router).
 app.route("/api/internal/workflows", internalWorkflowsRouter);
-
-// ─── Cron (Vercel Cron / QStash scheduled) ───────────────────────────────────
-// GET /api/cron — sweep abandoned orders + sync NOEST order statuses
-// (protected by CRON_SECRET header)
-app.get("/api/cron", async (c) => {
-  const secret = c.req.header("authorization")?.replace("Bearer ", "") ?? "";
-  const expected = c.env.CRON_SECRET;
-  if (expected && secret !== expected) {
-    return c.json({ error: "Unauthorized" }, 401);
-  }
-  const { sweepAbandonedOrders } = await import("@/cron/sweep-abandoned-orders");
-  const count = await sweepAbandonedOrders(getDb(c.env.DB));
-
-  // NOEST has no status webhooks — this daily run is the automatic freshness
-  // source for NOEST parcels. Failures must never break the sweep response.
-  let noest: unknown = { ran: false, reason: "skipped" };
-  try {
-    const { getDb } = await import("@/db");
-    const { reconcileAllNoestCompanies } = await import(
-      "@/endpoints/delivery-companies/providers/noest/reconcile"
-    );
-    noest = await reconcileAllNoestCompanies(getDb(c.env.DB));
-  } catch (err) {
-    console.error("[cron] noest reconcile failed:", err instanceof Error ? err.message : err);
-    noest = { ran: false, reason: "error" };
-  }
-  return c.json({ ok: true, swept: count, noest });
-});
 
 // Protected routes (require authentication)
 app.use("/api/*", authMiddleware);
@@ -192,5 +163,29 @@ app.notFound((c) => {
   return c.json({ error: "Not found" }, 404);
 });
 
-// Export for Vercel entry point — does NOT export CF-specific stuff
-export default app;
+// Export for Vercel entry point — api/index.ts unwraps `.fetch` when present.
+export default {
+  fetch: app.fetch.bind(app),
+  async scheduled(_event: unknown, env: Env, _ctx: unknown) {
+    const { sweepAbandonedOrders } = await import("@/cron/sweep-abandoned-orders");
+    try {
+      await sweepAbandonedOrders(getDb(env.DB as any));
+    } catch (err) {
+      console.error("[cron] sweep failed:", err instanceof Error ? err.message : err);
+    }
+    try {
+      const { reconcileAllNoestCompanies } = await import(
+        "@/endpoints/delivery-companies/providers/noest/reconcile"
+      );
+      await reconcileAllNoestCompanies(getDb(env.DB as any));
+    } catch (err) {
+      console.error("[cron] noest reconcile failed:", err instanceof Error ? err.message : err);
+    }
+  },
+};
+
+// Cloudflare Workflows — required for wrangler deploy with [[workflows]] bindings.
+// Theme01 stays on Vercel; cod-server + dashboard run on Cloudflare Workers.
+export { CodCapiWorkflow } from "@/workflows/capi";
+export { CodTiktokWorkflow } from "@/workflows/tiktok";
+export { CodLandingPageImageUploadWorkflow } from "@/workflows/landing-page-image-upload";

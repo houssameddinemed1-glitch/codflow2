@@ -52,6 +52,10 @@ export interface Env {
   QSTASH_NEXT_SIGNING_KEY?: string;
   /** HMAC secret for MCP login tickets (must match the dashboard) */
   MCP_LOGIN_TICKET_SECRET?: string;
+  /** Cloudflare Workflows bindings (durable CAPI / TikTok / LP image upload) */
+  CAPI_WORKFLOW?: any;
+  TIKTOK_WORKFLOW?: any;
+  LP_IMAGE_UPLOAD_WORKFLOW?: any;
 }
 
 /**

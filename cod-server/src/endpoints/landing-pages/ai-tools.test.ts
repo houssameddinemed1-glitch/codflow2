@@ -355,7 +355,10 @@ function makeUploadEnv(): {
 function publishedCall() {
   const calls = queueMocks.publishWorkflowWithId.mock.calls as unknown[][];
   expect(calls).toHaveLength(1);
-  const [kind, payload, deduplicationId] = calls[0] as [string, Record<string, unknown>, string];
+  const raw = calls[0] as unknown[];
+  const [kind, payload, deduplicationId] = typeof raw[0] === "string"
+    ? [raw[0] as string, raw[1] as Record<string, unknown>, raw[2] as string]
+    : [raw[1] as string, raw[2] as Record<string, unknown>, raw[3] as string];
   return { kind, payload, deduplicationId };
 }
 

@@ -88,6 +88,7 @@ export async function updateStatus(c: Context<AppContext>) {
   if (isDeliveredTrigger || isConfirmedTrigger) {
     const stage = isConfirmedTrigger ? "confirmed" : "delivered";
     await publishWorkflow(
+      c.env,
       "capi",
       {
         orderId,
@@ -108,6 +109,7 @@ export async function updateStatus(c: Context<AppContext>) {
   if (isDeliveredTrigger || isConfirmedTrigger) {
     const stage = isConfirmedTrigger ? "confirmed" : "delivered";
     await publishWorkflow(
+      c.env,
       "tiktok",
       {
         orderId,

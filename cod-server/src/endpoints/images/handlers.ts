@@ -31,12 +31,11 @@ function extFromMime(mime: string): string {
 /**
  * POST /api/images/upload
  * Receives multipart/form-data with a "file" field.
- * Stores in Vercel Blob, returns { key, url }.
+ * Stores in R2, returns { key, url }.
  *
- * NOTE: Vercel serverless functions cap request bodies (~4.5 MB), so this
- * path only fits small files in production despite the 10 MB guard below.
- * Large uploads must use the browser direct-upload flow
- * (POST /api/images/blob-callback + @vercel/blob/client).
+ * NOTE: proxy uploads buffer fully in Worker memory (10 MB cap below).
+ * Large uploads must use the presigned direct-upload flow
+ * (POST /api/images/presign → PUT straight to R2).
  */
 export async function uploadImage(c: Context<AppContext>) {
   let formData: FormData;

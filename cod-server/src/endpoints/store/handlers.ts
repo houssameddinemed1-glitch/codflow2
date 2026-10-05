@@ -328,6 +328,7 @@ export async function createStoreOrder(c: Context<AppContext>) {
       }
 
       await publishWorkflow(
+        c.env,
         "capi",
         {
           orderId: order.id,
@@ -378,6 +379,7 @@ export async function createStoreOrder(c: Context<AppContext>) {
       }
 
       await publishWorkflow(
+        c.env,
         "tiktok",
         {
           orderId: order.id,

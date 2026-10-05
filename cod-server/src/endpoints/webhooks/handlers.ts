@@ -208,6 +208,7 @@ export async function handleZrWebhook(c: Context<AppContext>) {
 
       if (updated && shouldTriggerCapiPurchase(newStatus, resolvedOrder.wilayaId)) {
         await publishWorkflow(
+          c.env,
           "capi",
           {
             orderId: resolvedOrder.id,
@@ -453,6 +454,7 @@ export async function handleYalidineWebhook(c: Context<AppContext>) {
 
       if (updated && shouldTriggerCapiPurchase(nextStatus, order.wilayaId)) {
         await publishWorkflow(
+          c.env,
           "capi",
           {
             orderId: order.id,

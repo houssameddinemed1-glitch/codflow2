@@ -1,6 +1,6 @@
 /**
  * CAPI Lead trigger — drives the real createStoreOrder handler through the
- * mounted store router, pinning the QStash port of the old durable workflow:
+ * mounted store router, pinning the queue port of the durable workflow:
  *   - every order publishes a "capi" job (dedup capi-{orderId}-checkout-{event})
  *   - publishing is awaited inline and fail-open (a rejection never blocks 201)
  *   - pixel disabled → no publish, order still 201
@@ -126,11 +126,11 @@ beforeEach(() => {
   stubSuccessfulOrderFlow();
 });
 
-describe("CAPI checkout trigger (QStash)", () => {
-  type PublishCall = [string, Record<string, unknown>, string];
+describe("CAPI checkout trigger (Workflows, fail-open)", () => {
+  type PublishCall = [unknown, string, Record<string, unknown>, string];
   const capiCalls = () =>
     (vi.mocked(publishWorkflow).mock.calls as unknown as PublishCall[]).filter(
-      ([kind]) => kind === "capi",
+      ([a, b]) => (typeof a === "string" ? a : b) === "capi",
     );
 
   it("publishes a capi job for the order at checkout", async () => {
@@ -140,7 +140,8 @@ describe("CAPI checkout trigger (QStash)", () => {
 
     expect(res.status).toBe(201);
     expect(capiCalls()).toHaveLength(1);
-    const [kind, payload, dedupId] = capiCalls()[0];
+    const raw = capiCalls()[0];
+    const [kind, payload, dedupId] = typeof raw[0] === "string" ? [raw[0] as string, raw[1] as Record<string, unknown>, raw[2] as string] : [raw[1] as string, raw[2] as Record<string, unknown>, raw[3] as string];
     expect(kind).toBe("capi");
     expect(dedupId).toBe("capi-ord-1-checkout-Lead");
     expect(payload.orderId).toBe("ord-1");

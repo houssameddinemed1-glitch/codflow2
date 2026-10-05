@@ -443,10 +443,10 @@ export const LANDING_PAGE_TOOL_SCHEMAS: Record<string, z.ZodRawShape> = {
   archiveLandingPage: archiveLandingPageSchema.shape,
 };
 
-/** Env surface the landing-page tools consume: deployment vars. Storage is
- *  Vercel Blob (via lib/blob) and background uploads go through QStash
- *  (via lib/queue) — no bindings travel in this object. */
-export type LandingPageToolEnv = Pick<Env, "STOREFRONT_URL" | "MEDIA_DOMAIN">;
+/** Env surface the landing-page tools consume: deployment vars + the durable
+ *  image-upload workflow binding (Cloudflare-first; QStash HTTP fallback when
+ *  the binding is absent, e.g. tests). */
+export type LandingPageToolEnv = Pick<Env, "STOREFRONT_URL" | "MEDIA_DOMAIN" | "LP_IMAGE_UPLOAD_WORKFLOW">;
 
 /** Verified session identity — structurally satisfied by McpProps. Only the
  *  upload tool needs it (the background workflow audits through this actor). */
@@ -865,6 +865,7 @@ export const getLandingPageTools = (
         }
 
         const published = await publishWorkflowWithId(
+          env,
           "lp-image-upload",
           {
             uploadJobId: instanceId,
