@@ -83,7 +83,7 @@ export function ProductForm({ productId }: { productId?: string }) {
   const [status, setStatus] = useState<ProductStatus>("ACTIVE");
   const [trackInventory, setTrackInventory] = useState(true);
   const [showInStore, setShowInStore] = useState(true);
-  const [inventory, setInventory] = useState("0");
+  const [inventory, setInventory] = useState("999");
   const [lowStockThreshold, setLowStockThreshold] = useState("5");
 
   const [groups, setGroups] = useState<Array<{ id: string; name: string }>>([]);
@@ -225,7 +225,7 @@ export function ProductForm({ productId }: { productId?: string }) {
         ...combo,
         price: byKey[combo.key]?.price ?? priceRef.current,
         sku: byKey[combo.key]?.sku ?? "",
-        inventory: byKey[combo.key]?.inventory ?? "0",
+        inventory: byKey[combo.key]?.inventory ?? "999",
         lowStockThreshold: byKey[combo.key]?.lowStockThreshold ?? "5",
         active: byKey[combo.key]?.active ?? true,
         existingId: byKey[combo.key]?.existingId,
