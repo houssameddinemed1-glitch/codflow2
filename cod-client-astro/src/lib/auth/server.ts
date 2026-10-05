@@ -220,6 +220,7 @@ export function createAuth(env: AuthEnv) {
           // Default payload embeds the ENTIRE user row — including the
           // plaintext apiKey additionalField. Whitelist instead.
           definePayload: ({ user }) => ({
+            sub: user.id,
             id: user.id,
             email: user.email,
             role: (user as { role?: string }).role ?? "staff",
